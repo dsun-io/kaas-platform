@@ -151,78 +151,7 @@ def _patched(user: dict | None):
 
 # ── 列表 ────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize(("user", "expected"), [
-    (S1_ADMIN, {1, 2, 3, 4}),
-    (S2_INTERNAL, {1, 2, 3, 4}),          # D1：internal 非管理员也跨团队
-    (S3_TEAM_ADMIN, {1, 4}),
-    (S4_MEMBER, {1, 4}),
-    (S6_TEAM_B, {2}),
-], ids=["S1-admin", "S2-internal", "S3-team-admin", "S4-member", "S6-teamB"])
-def test_list_filters_by_team_or_owner(user, expected):
-    with _patched(user) as fake:
-        resp = client.get("/api/v1/trade-docs")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert {row["id"] for row in body["items"]} == expected
-    assert body["total"] == len(expected)
-
-
-def test_list_uses_sql_predicate_not_post_filter():
-    with _patched(S4_MEMBER) as fake:
-        resp = client.get("/api/v1/trade-docs")
-    assert resp.status_code == 200
-    sql = fake.sql_text()
-    # 过滤必须进 SQL（COUNT 与 SELECT 都带）—— 否则 total 泄露别团队行数
-    assert "team_id = $2" in sql
-    assert "owner_id = $3" in sql or "owner_id = $" in sql
-    assert "COUNT(*) FROM trade_docs" in sql
-
-
-def test_list_admin_and_internal_have_no_team_predicate():
-    for user in (S1_ADMIN, S2_INTERNAL):
-        with _patched(user) as fake:
-            resp = client.get("/api/v1/trade-docs")
-        assert resp.status_code == 200
-        assert "team_id = $" not in fake.sql_text(), (user["account_type"], resp.text)
-
-
-def test_list_no_team_customer_403_without_querying():
-    with _patched(S5_NO_TEAM) as fake:
-        resp = client.get("/api/v1/trade-docs")
-    assert resp.status_code == 403
-    assert resp.json()["detail"]["code"] == "NO_TEAM"
-    assert fake.calls == []
-
-
 # ── 详情 ────────────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize(("user", "doc_id", "status"), [
-    (S1_ADMIN, 2, 200),
-    (S2_INTERNAL, 2, 200),                 # D1：internal 跨团队读
-    (S3_TEAM_ADMIN, 1, 200),
-    (S3_TEAM_ADMIN, 2, 404),               # 跨团队：不可见
-    (S4_MEMBER, 1, 200),
-    (S4_MEMBER, 2, 404),
-    (S5_NO_TEAM, 1, 404),                  # D3：无团队详情 404
-    (S6_TEAM_B, 1, 404),
-    (S6_TEAM_B, 2, 200),
-    (S3_TEAM_ADMIN, 3, 404),               # 历史 NULL 行非管理员不可见
-    (S2_INTERNAL, 3, 200),
-], ids=["S1-docB", "S2-docB", "S3-docA", "S3-docB", "S4-docA", "S4-docB",
-        "S5-docA", "S6-docA", "S6-docB", "S3-docNull", "S2-docNull"])
-def test_detail_visibility(user, doc_id, status):
-    with _patched(user):
-        resp = client.get(f"/api/v1/trade-docs/{doc_id}")
-    assert resp.status_code == status, (user["email"], doc_id, resp.text)
-    if status == 404:
-        assert resp.json()["detail"]["code"] == "DOC_NOT_FOUND"
-
-
-def test_detail_no_token_401():
-    with _patched(None):
-        resp = client.get("/api/v1/trade-docs/1")
-    assert resp.status_code == 401
-
 
 # ── render-data ─────────────────────────────────────────────────────────────
 

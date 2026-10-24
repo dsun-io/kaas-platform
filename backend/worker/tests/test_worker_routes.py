@@ -70,6 +70,8 @@ EXISTING_ROUTES = {
 
 # 阶段 3 新补的线上接口（每补一个接口在此追加一条）
 NEW_ROUTES: set[tuple[str, str]] = {
+# 占位：真正的减法在集合定义之后（见下方 DELETED_GET_ROUTES 段）
+
     ("/api/v1/quotations", "GET"),
     ("/api/v1/quotations", "POST"),
     ("/api/v1/pricing-data", "GET"),
@@ -191,6 +193,32 @@ NEW_ROUTES: set[tuple[str, str]] = {
     ("/api/v1/market/name-mappings", "GET"),
     ("/api/v1/market/name-mappings/{mapping_id}", "PATCH"),
     ("/api/v1/market/name-mappings/{mapping_id}", "DELETE"),
+}
+
+# P3 步骤3（2026-10-24）：以下 GET handler 已删除（门面已放量，off 回退改为回滚代码）；
+# 内核不再注册这些路由 ⇒ 从「期望路由面/鉴权矩阵」里减去，而不是放宽断言。
+NEW_ROUTES -= {
+    ("/api/v1/ai/providers", "GET"),
+    ("/api/v1/ai/usage", "GET"),
+    ("/api/v1/approvals", "GET"),
+    ("/api/v1/events", "GET"),
+    ("/api/v1/external-docs", "GET"),
+    ("/api/v1/fx-rates", "GET"),
+    ("/api/v1/inquiries", "GET"),
+    ("/api/v1/inquiries/{inquiry_id}", "GET"),
+    ("/api/v1/inquiries/{inquiry_id}/stage-log", "GET"),
+    ("/api/v1/notifications/unread-count", "GET"),
+    ("/api/v1/product-tax-rates", "GET"),
+    ("/api/v1/products", "GET"),
+    ("/api/v1/products/{product_key}/media", "GET"),
+    ("/api/v1/products/{product_key}/profile", "GET"),
+    ("/api/v1/quotations", "GET"),
+    ("/api/v1/tax-archives", "GET"),
+    ("/api/v1/trade-docs", "GET"),
+    ("/api/v1/trade-docs/{doc_id}", "GET"),
+    ("/api/v1/trade-docs/{doc_id}/content-versions", "GET"),
+    ("/api/v1/trade-docs/{doc_id}/content-versions/{version_no}", "GET"),
+    ("/api/v1/trade-docs/{doc_id}/files", "GET"),
 }
 
 # 公开路由（与 orchestrator 一致：静态常量、非敏感，前端登录前后都要取）

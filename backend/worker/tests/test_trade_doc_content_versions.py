@@ -244,40 +244,6 @@ def test_translate_writeback_records_version():
 
 # ── 读路径：列表 / 详情 ────────────────────────────────────────────────────
 
-def test_list_versions_returns_summaries_without_payload():
-    rows = [
-        _version_row(version_no=3, note="恢复至 v1", custom_keys=["payment_terms"]),
-        _version_row(version_no=1, raw_payload={"sources": {}, "custom": {}},
-                     change_source="refresh_sources", custom_keys=[]),
-    ]
-    db = _FakeDb(fetchrow=[_doc_row()], fetch=[rows])
-    with _patched(db):
-        resp = client.get("/api/v1/trade-docs/11/content-versions")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["doc_id"] == 11 and body["total"] == 2
-    assert [i["version_no"] for i in body["items"]] == [3, 1]
-    assert "raw_payload" not in body["items"][0]
-    assert body["items"][0]["custom_keys"] == ["payment_terms"]
-
-
-def test_get_version_returns_full_payload():
-    db = _FakeDb(fetchrow=[_doc_row(), _version_row(version_no=1)])
-    with _patched(db):
-        resp = client.get("/api/v1/trade-docs/11/content-versions/1")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["version_no"] == 1
-    assert body["raw_payload"]["custom"]["payment_terms"] == "30% T/T"
-
-
-def test_get_unknown_version_404():
-    db = _FakeDb(fetchrow=[_doc_row(), None])
-    with _patched(db):
-        resp = client.get("/api/v1/trade-docs/11/content-versions/99")
-    assert resp.status_code == 404
-    assert resp.json()["detail"]["code"] == "VERSION_NOT_FOUND"
-
 
 # ── 恢复 ───────────────────────────────────────────────────────────────────
 

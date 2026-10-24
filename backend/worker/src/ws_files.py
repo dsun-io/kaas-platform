@@ -382,60 +382,11 @@ async def _create_file(*, request: Request, user: dict, owner_type: str, owner_i
 
 # ── 产品 ────────────────────────────────────────────────────────────────────
 
-@app.get("/api/v1/products")
-async def list_products(request: Request, user: dict = Depends(_get_current_user)):
-    """产品来自**代码注册表**（ProductSpec keys），这里只挂租户可编辑的图片数与基础信息。"""
-    # ⚠️ 本端点混着"人人可读的定义"与"仅团队可见的信息" ⇒ 用 **soft** 版：
-    # 无团队时**不能** 403（否则把 Q6 两层压平），而是私有部分为空、定义照旧返回。
-    media_frag, media_extra = _team_scope_soft(user, 2)
-    rows = await db.fetch(
-        request,
-        "SELECT owner_id, COUNT(*) AS n FROM file_objects WHERE tenant_id=$1"
-        " AND owner_type='product' AND kind='product_photo' AND is_current"
-        + media_frag + " GROUP BY owner_id",
-        DEFAULT_TENANT, *media_extra, table=None)
-    media = {r["owner_id"]: int(r["n"]) for r in rows}
-    prof_frag, prof_extra = _team_scope_soft(user, 2)
-    # 排序只为**确定性**：管理员视角一行都不过滤，同一 key 可能有多团队各一行，
-    # 统一「最近更新的那次生效」（与 `quote_api._quotable_specs` 同一口径），
-    # 否则产品卡上的英文名会随 PG 返回顺序抖动。
-    profs = await db.fetch(
-        request, "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
-        + prof_frag + " ORDER BY updated_at DESC",
-        DEFAULT_TENANT, *prof_extra, table="product_profiles")
-    profiles: dict = {}
-    for r in profs:
-        profiles.setdefault(r["product_key"], r["info"])
-    items = []
-    for key in product_keys():
-        spec = get_product(key)
-        info = profiles.get(key) or {}
-        # 英文名（2026-10-24）：团队资料里配的主英文名**优先于**代码注册表 ——
-        # 系统产品（鹿网/牛栏网/勾花网）没有 tenant_products 行，改英文名只能落在
-        # product_profiles.info；这里把读侧统一成一个口径，谁能改、谁生效都看这里。
-        # 注意：没有团队资料时回落注册表 name_en（旧响应逐字不变）。
-        names = name_en_list_from_info(info) or ([spec.name_en] if spec.name_en else [])
-        primary = names[0] if names else ""
-        items.append({
-            "product_key": key,
-            "name": spec.name or key,
-            "name_en": primary or spec.name_en,
-            # 地区别名 = 主名之外的其它英文名（报价/单证只用主名）
-            "name_en_aliases": names[1:],
-            # 全部英文名（主名在前）—— 详情页编辑框用它回填，避免前端自己猜顺序
-            "name_en_list": names,
-            "category_code": spec.category_code,
-            "media_count": media.get(key, 0),
-            "profile": profiles.get(key) or {},
-        })
-    return {"items": items, "media_kinds": MEDIA_KIND_LABELS}
-
 
 class ProfileIn(BaseModel):
     info: dict
 
 
-@app.get("/api/v1/products/{product_key}/profile")
 async def get_profile(product_key: str, request: Request, user: dict = Depends(_get_current_user)):
     row = await db.fetchrow(
         request, "SELECT product_key, info, updated_at, team_id FROM product_profiles"
@@ -499,17 +450,6 @@ async def put_profile(product_key: str, body: ProfileIn, request: Request,
 
 
 # ── 产品图片 ────────────────────────────────────────────────────────────────
-
-@app.get("/api/v1/products/{product_key}/media")
-async def list_media(product_key: str, request: Request, user: dict = Depends(_get_current_user)):
-    rows = await db.fetch(
-        request,
-        f"SELECT {_META_COLS} FROM file_objects WHERE tenant_id=$1 AND owner_type='product'"
-        " AND owner_id=$2 AND kind='product_photo' AND is_current"
-        + _team_scope(user, 3)[0]
-        + f" ORDER BY {_FILE_ORDER_BY}", DEFAULT_TENANT, product_key,
-        *_team_scope(user, 3)[1], table=None)
-    return {"items": [_row_to_file(r) for r in rows], "media_kinds": MEDIA_KIND_LABELS}
 
 
 @app.post("/api/v1/products/{product_key}/media", status_code=201)
@@ -637,26 +577,6 @@ class DocFileIn(BaseModel):
     role: str = "product_photo"
     caption: Optional[str] = None
     sort_order: int = 0
-
-
-@app.get("/api/v1/trade-docs/{doc_id}/files")
-async def list_doc_files(doc_id: int, request: Request, user: dict = Depends(_get_current_user)):
-    rows = await db.fetch(
-        request,
-        f"SELECT t.id AS link_id, t.role AS link_role, t.caption AS link_caption,"
-        f" t.sort_order AS link_sort_order, {_FILE_COLS_F}"
-        " FROM trade_doc_files t JOIN file_objects f ON f.id = t.file_id"
-        " WHERE t.tenant_id=$1 AND t.trade_doc_id=$2"
-        + _team_scope(user, 3, col="f.team_id")[0]
-        + " ORDER BY t.sort_order, t.id",
-        DEFAULT_TENANT, doc_id, *_team_scope(user, 3, col="f.team_id")[1], table=None)
-    items = []
-    for r in rows:
-        item = _row_to_file({k: v for k, v in dict(r).items() if not k.startswith("link_")})
-        item.update({"link_id": int(r["link_id"]), "role": r["link_role"],
-                     "caption": r["link_caption"], "sort_order": int(r["link_sort_order"])})
-        items.append(item)
-    return {"items": items}
 
 
 @app.post("/api/v1/trade-docs/{doc_id}/files", status_code=201)

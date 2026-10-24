@@ -533,17 +533,6 @@ def test_customer_patch_rejects_bad_owner_scope():
     assert resp.json()["detail"]["code"] == "INVALID_ENUM"
 
 
-def test_inquiries_list_joins_company_name():
-    db = _FakeDb(fetch=[[{**_inquiry_row(), "company_name": "ACME"}]])
-    with _patched(db):
-        resp = client.get("/api/v1/inquiries")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["total"] == 1
-    assert body["items"][0]["company_name"] == "ACME"
-    assert "JOIN customers" in db.sql_calls()
-
-
 def test_inquiry_close_syncs_lead_but_does_not_touch_customer_stage():
     """2026-10-18：询盘是单据阶段，关闭不再联动客户阶段（客户阶段只有活跃/沉寂/已下单）。"""
     inq = _inquiry_row(status="unquoted", lead_id=77)
@@ -635,7 +624,6 @@ def test_trade_doc_create_assembles_payload():
     assert inserts, conn.sql()
     assert inserts[0][1][5] == 3                        # customer_id
     assert inserts[0][1][3] == 3 and inserts[0][1][4] is None   # order_id 落列、quote_id 为空
-
 
 
 def test_trade_doc_render_data_assembles_seller_and_buyer():

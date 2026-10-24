@@ -266,49 +266,6 @@ class TestPutProfile:
 # 3. 读：GET /products 回主名 + 地区别名
 # ════════════════════════════════════════════════════════════════════════════
 
-class TestListProducts:
-    def test_改过英文名的产品回主名与别名_没改的回落注册表(self, monkeypatch):
-        _install(monkeypatch, _FakeDb({
-            "deer_net": {"info": {
-                "name_en_list": ["Deer Fence EU", "Deer Net"],
-                "name_en_primary": "Deer Fence EU",
-            }, "team_id": TEAM},
-        }))
-        body = _products().json()
-        by_key = {p["product_key"]: p for p in body["items"]}
-        deer = by_key["deer_net"]
-        assert deer["name_en"] == "Deer Fence EU"
-        assert deer["name_en_aliases"] == ["Deer Net"]
-        assert deer["name_en_list"] == ["Deer Fence EU", "Deer Net"]
-        # 没配团队资料的产品：注册表英文名原样（旧口径不变）
-        fence = by_key["field_fence"]
-        assert fence["name_en"] == "Field Fence"
-        assert fence["name_en_aliases"] == []
-        assert fence["name_en_list"] == ["Field Fence"]
-
-    def test_历史单值name_en也能被列表读到(self, monkeypatch):
-        _install(monkeypatch, _FakeDb({
-            "field_fence": {"info": {"name_en": "Cattle Fence"}, "team_id": TEAM},
-        }))
-        by_key = {p["product_key"]: p for p in _products().json()["items"]}
-        assert by_key["field_fence"]["name_en"] == "Cattle Fence"
-        assert by_key["field_fence"]["name_en_aliases"] == []
-
-    def test_产品资料查询带团队谓词(self, monkeypatch):
-        db = _install(monkeypatch, _FakeDb())
-        _products(user=_user(team_id=OTHER_TEAM))
-        sql, args, _table = next(
-            c for c in db.calls if "FROM product_profiles" in c[0])
-        assert "team_id=$2" in sql, sql
-        assert OTHER_TEAM in args
-
-    def test_管理员不加团队谓词(self, monkeypatch):
-        db = _install(monkeypatch, _FakeDb())
-        _products(user=_user(role="system_admin", team_id=None))
-        sql, _args, _table = next(
-            c for c in db.calls if "FROM product_profiles" in c[0])
-        assert "team_id=" not in sql, sql
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # 4. 下游：/export-quote/products 用主英文名（报价/订单/单证才拿得到）

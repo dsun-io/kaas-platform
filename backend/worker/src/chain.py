@@ -580,22 +580,6 @@ def _row_to_provider(p) -> dict:
     }
 
 
-@app.get("/api/v1/ai/providers")
-async def ai_list_providers(request: Request, user: dict = Depends(_get_current_user)):
-    _require_ai_admin(user)
-    async with _acquire(request) as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM ai_providers WHERE tenant_id=$1", DEFAULT_TENANT)
-    existing = {r["provider"]: r for r in rows}
-    return {"items": [
-        _row_to_provider(existing[n]) if n in existing else {
-            "provider": n, "api_key_masked": None, "has_key": False,
-            "model": None, "base_url": None, "enabled": False,
-            "default_model": PROVIDER_DEFAULTS[n]["model"],
-            "default_base_url": PROVIDER_DEFAULTS[n]["base_url"]}
-        for n in PROVIDER_DEFAULTS]}
-
-
 @app.put("/api/v1/ai/providers/{name}")
 async def ai_upsert_provider(name: str, body: ProviderUpsert,
                              request: Request, user: dict = Depends(_get_current_user)):
@@ -705,46 +689,6 @@ async def ai_upsert_binding(task_key: str, body: BindingUpsert,
     out = dict(b)
     out["use_ai"] = out["enabled"]
     return out
-
-
-@app.get("/api/v1/ai/usage")
-async def ai_usage(request: Request, user: dict = Depends(_get_current_user),
-                   task_key: Optional[str] = None,
-                   provider: Optional[str] = None,
-                   status: Optional[str] = None,
-                   page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=200)):
-    _require_ai_admin(user)
-    where = ["tenant_id = $1"]
-    params: list = [DEFAULT_TENANT]
-    idx = 2
-    for col, val in (("task_key", task_key), ("provider", provider), ("status", status)):
-        if val:
-            where.append(f"{col} = ${idx}")
-            params.append(val)
-            idx += 1
-    where_sql = " AND ".join(where)
-    async with _acquire(request) as conn:
-        total = await conn.fetchval(f"SELECT COUNT(*) FROM ai_usage WHERE {where_sql}", *params)
-        rows = await conn.fetch(
-            f"""SELECT id, task_key, provider, model, prompt_tokens, completion_tokens,
-                       cost_usd, status, error, latency_ms, created_at
-                FROM ai_usage WHERE {where_sql}
-                ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}""",
-            *params, page_size, (page - 1) * page_size)
-        stats = await conn.fetch(
-            """SELECT task_key, provider, status, COUNT(*) AS cnt,
-                      COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
-                      COALESCE(SUM(completion_tokens),0) AS completion_tokens
-               FROM ai_usage WHERE tenant_id=$1
-               GROUP BY task_key, provider, status""",
-            DEFAULT_TENANT)
-    return {"items": [dict(r) for r in rows], "total": total,
-            "page": page, "page_size": page_size,
-            "stats": [{"task_key": s["task_key"], "provider": s["provider"],
-                       "status": s["status"], "count": s["cnt"],
-                       "prompt_tokens": s["prompt_tokens"],
-                       "completion_tokens": s["completion_tokens"]}
-                      for s in stats]}
 
 
 @app.post("/api/v1/ai/tasks/{task_key}/run")

@@ -231,62 +231,6 @@ _DL_SCOPE = (
 )
 
 
-class TestListIsolation:
-    def test_管理员_只受租户约束(self, monkeypatch):
-        conn = _install(monkeypatch, ADMIN, True, "list")
-        out = asyncio.run(ws_extras.list_external_docs(object(), limit=50, user=ADMIN))
-        assert {r["id"] for r in out} == EXPECTED["admin"]
-        sql, params = conn.calls[0]
-        assert sql == (_LIST_SELECT + " AND tenant_id=$1" + _LIST_TAIL + "$2")
-        assert params == (TENANT, 50)
-
-    def test_成员_本人上传_或本团队挂载件(self, monkeypatch):
-        conn = _install(monkeypatch, MEMBER, False, "list")
-        out = asyncio.run(ws_extras.list_external_docs(object(), limit=50, user=MEMBER))
-        assert {r["id"] for r in out} == EXPECTED["member"]
-        sql, params = conn.calls[0]
-        assert sql == (_LIST_SELECT + " AND tenant_id=$1" + _LIST_SCOPE + _LIST_TAIL + "$6")
-        # uid 是 $2；三个团队占位符 $3/$4/$5 都取本团队
-        assert params == (TENANT, "9", 4, 4, 4, 50)
-
-    def test_别团队_只看得到挂自己团队单的件(self, monkeypatch):
-        _install(monkeypatch, OTHER, False, "list")
-        out = asyncio.run(ws_extras.list_external_docs(object(), limit=50, user=OTHER))
-        assert {r["id"] for r in out} == EXPECTED["other"]
-
-    def test_无团队_非管理员_看不到任何件(self, monkeypatch):
-        conn = _install(monkeypatch, NO_TEAM, False, "list")
-        out = asyncio.run(ws_extras.list_external_docs(object(), limit=50, user=NO_TEAM))
-        assert {r["id"] for r in out} == EXPECTED["no_team"]
-        sql, params = conn.calls[0]
-        # 无团队 ⇒ 谓词只剩 uploaded_by，不出现任何 team 子查询
-        assert "team_id =" not in sql
-        assert sql == (_LIST_SELECT + " AND tenant_id=$1"
-                       + " AND (uploaded_by = $2::text)" + _LIST_TAIL + "$3")
-        assert params == (TENANT, "11", 50)
-
-    def test_筛选参数排在可见性谓词之后(self, monkeypatch):
-        conn = _install(monkeypatch, MEMBER, False, "list")
-        asyncio.run(ws_extras.list_external_docs(
-            object(), order_id=31, doc_type="pi", limit=50, user=MEMBER))
-        sql, params = conn.calls[0]
-        assert sql == (_LIST_SELECT + " AND tenant_id=$1" + _LIST_SCOPE
-                       + " AND order_id=$6 AND doc_type=$7" + _LIST_TAIL + "$8")
-        assert params == (TENANT, "9", 4, 4, 4, 31, "pi", 50)
-
-    def test_阳性对照_同一行换团队身份可见性不同(self, monkeypatch):
-        """doc 2 挂 team 8 订单：MEMBER 看不见、OTHER 看得见 ⇒ 证明不是恒空。"""
-        _install(monkeypatch, MEMBER, False, "list")
-        member_ids = {r["id"] for r in asyncio.run(
-            ws_extras.list_external_docs(object(), limit=50, user=MEMBER))}
-        _install(monkeypatch, OTHER, False, "list")
-        other_ids = {r["id"] for r in asyncio.run(
-            ws_extras.list_external_docs(object(), limit=50, user=OTHER))}
-        assert 2 not in member_ids
-        assert 2 in other_ids
-        assert member_ids != other_ids
-
-
 # ── 2. 下载：可见性 + 越权 404 ───────────────────────────────────────────────
 
 def _download(monkeypatch, user, doc_id, *, is_admin):

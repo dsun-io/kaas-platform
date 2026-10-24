@@ -354,6 +354,15 @@ QUOTE_ROUTES = {
     ("/api/v1/quotes/{quote_id}/items", "PUT"),
 }
 
+
+# P3 步骤3（2026-10-24）：以下 GET handler 已删除（门面已放量，off 回退改为回滚代码）；
+# 内核不再注册这些路由 ⇒ 从「期望路由面/鉴权矩阵」里减去，而不是放宽断言。
+QUOTE_ROUTES -= {
+    ("/api/v1/quotes", "GET"),
+    ("/api/v1/quotes/reference-price", "GET"),
+    ("/api/v1/quotes/cost-reference", "GET"),
+    ("/api/v1/quotes/{quote_id}", "GET"),
+}
 ORDER_ROUTES = {
     ("/api/v1/orders", "GET"),
     ("/api/v1/orders", "POST"),
@@ -416,12 +425,8 @@ def test_export_quote_core_route_surface_covers_orchestrator():
 def test_all_quote_endpoints_require_credentials():
     """报价域全部端点未登录 → 401（不是 404/422），且不触库。"""
     requests = [
-        ("get", "/api/v1/quotes", None),
         ("post", "/api/v1/quotes", {"items": [{"product_name": "x"}]}),
         ("post", "/api/v1/quotes/batch", {"groups": []}),
-        ("get", "/api/v1/quotes/reference-price", None),
-        ("get", "/api/v1/quotes/cost-reference", None),
-        ("get", "/api/v1/quotes/1", None),
         ("patch", "/api/v1/quotes/1", {"status": "sent"}),
         ("put", "/api/v1/quotes/1/items", {"items": []}),
     ]
@@ -468,114 +473,9 @@ def test_auth_precedes_body_validation():
     assert resp.status_code == 401
 
 
-def test_parity_quote_1_unauthorized_envelope_is_structured():
-    """已修 2026-10-19（PARITY-QUOTE-1）：401 体 = {error,message}。
-
-    orchestrator core/auth.py:207-221：无凭据 → `Authentication required`；
-    坏/过期 token → `Invalid or expired token`。worker 原先 detail 是裸字符串。
-    """
-    resp = client.get("/api/v1/quotes")
-    assert resp.status_code == 401
-    detail = resp.json()["detail"]
-    assert isinstance(detail, dict)
-    assert {"error", "message"} <= set(detail)
-    assert detail["error"] == "unauthorized"
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # 2. GET /api/v1/quotes —— 列表 / 分页 / 筛选
 # ════════════════════════════════════════════════════════════════════════════
-
-def test_list_quotes_shape_and_scope():
-    """列表形状 {items,total,page,page_size}；项 = 共享内核键集 + quote_no_editable。"""
-    conn = _FakeConn(
-        fetchval=[1],
-        fetch=[
-            [_quote_row()],                    # 报价行
-            [{"quote_order_id": 11, "n": 2}],  # 行数（_item_count_map）
-            [],                                 # 下游单证
-            [],                                 # 下游订单
-        ],
-    )
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes?page=2&page_size=5")
-
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert set(body) == {"items", "total", "page", "page_size"}
-    assert body["total"] == 1 and body["page"] == 2 and body["page_size"] == 5
-    assert set(body["items"][0]) == _QUOTE_KEYS | {"quote_no_editable"}
-    assert body["items"][0]["quote_no_editable"] is True
-    # 非管理员：可见范围条件必须下推 SQL（自己 / 显式共享 / 本团队）
-    list_sql, list_args = conn.first("FROM quote_orders WHERE")
-    assert "owner_id = $" in list_sql and "owner_scope = 'tenant'" in list_sql
-    assert 5 in [int(a) for a in list_args if isinstance(a, (int, str)) and str(a).isdigit()]
-    assert "5" in [str(a) for a in list_args]  # owner_id=我（字符串列）
-    assert 2 in list_args                      # team_id=我的团队
-
-
-def test_list_quotes_item_count_and_locked_flag():
-    """行数来自一次 GROUP BY（不做 N+1）；有下游单证 ⇒ quote_no_editable=false。"""
-    conn = _FakeConn(
-        fetchval=[1],
-        fetch=[
-            [_quote_row()],
-            [{"quote_order_id": 11, "n": 3}],
-            [{"quote_id": 11}],   # 已有 PI/合同等下游单证
-            [],
-        ],
-    )
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes")
-    item = resp.json()["items"][0]
-    assert item["item_count"] == 3
-    assert item["quote_no_editable"] is False
-
-
-def test_list_quotes_invalid_status_422():
-    """非法枚举 → 422（两端一致；错误体同为 INVALID_ENUM 结构）。"""
-    _as(CUSTOMER)
-    resp = client.get("/api/v1/quotes?status=bogus")
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["code"] == "INVALID_ENUM"
-
-
-def test_parity_quote_2_list_quotes_accepts_closed_status():
-    """`closed` 是 orchestrator 合法报价状态（同一询盘已生成后续单证时自动关闭）。"""
-    conn = _FakeConn(fetchval=[0], fetch=[[], [], []])
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes?status=closed")
-    assert resp.status_code == 200, resp.text
-
-
-def test_list_quotes_pagination_bounds_match_orchestrator():
-    """两端一致：报价列表分页 Query(ge=1, le=200) → 越界 422（与订单/应收不同）。"""
-    _as(CUSTOMER)
-    assert client.get("/api/v1/quotes?page=0").status_code == 422
-    assert client.get("/api/v1/quotes?page_size=999").status_code == 422
-
-
-def test_parity_quote_4_list_quotes_customer_id_is_int():
-    conn = _FakeConn(fetchval=[0], fetch=[[], [], []])
-    with _patched(conn, CUSTOMER):
-        assert client.get("/api/v1/quotes?customer_id=abc").status_code == 422
-
-
-def test_list_quotes_customer_id_binds_int_to_bigint_column():
-    """已修 2026-10-19（PARITY-QUOTE-4）：`?customer_id=` 声明为 int。
-
-    orchestrator 是 `Optional[int]`（quote_orders.py:403）；worker 原先声明
-    `Optional[str]` 并把字符串原样绑到 BIGINT 列 ⇒ 线上 asyncpg 会报
-    "expected int8, got str"（500）。现在非数字由 FastAPI 直接 422，
-    合法值以 int 绑定。
-    """
-    conn = _FakeConn(fetchval=[0], fetch=[[], [], []])
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes?customer_id=3")
-    assert resp.status_code == 200
-    list_sql, list_args = conn.first("FROM quote_orders WHERE")
-    assert "customer_id = $" in list_sql
-    assert 3 in [a for a in list_args if isinstance(a, int)]   # 绑定的是 int（不是 "3"）
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -784,57 +684,6 @@ def test_parity_quote_6_quote_item_model_covers_override_fields():
 # ════════════════════════════════════════════════════════════════════════════
 # 4. GET /api/v1/quotes/{quote_id} —— 详情
 # ════════════════════════════════════════════════════════════════════════════
-
-def test_get_quote_404_body_matches_orchestrator():
-    """两端一致：404 体同为 {error:not_found, code:QUOTE_NOT_FOUND}。"""
-    conn = _FakeConn(fetchrow=[None])
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes/999")
-    assert resp.status_code == 404
-    assert resp.json()["detail"] == {"error": "not_found", "code": "QUOTE_NOT_FOUND"}
-
-
-def test_get_quote_detail_shape_and_editable_flag():
-    """详情 = 共享内核单头键集 + quote_no_editable + items（行项同为内核键集）。"""
-    conn = _FakeConn(
-        fetchrow=[_quote_row()],
-        fetch=[[_item_row()]],
-        fetchval=[None, None],   # 无下游单证 / 无下游订单
-    )
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes/11")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert set(body) == _QUOTE_KEYS | {"quote_no_editable", "items"}
-    assert body["quote_no_editable"] is True
-    # customer 视角红线：cost_breakdown 在接口层剔除（orchestrator 同口径）
-    assert set(body["items"][0]) == _QUOTE_ITEM_KEYS - {"cost_breakdown"}
-    assert isinstance(body["items"][0]["line_amount"], float)
-    assert isinstance(body["items"][0]["qty"], float)
-
-
-def test_get_quote_detail_locked_after_downstream_doc():
-    """已有 PI/合同等下游单证 ⇒ 报价单号锁定（quote_no_editable=false）。"""
-    conn = _FakeConn(fetchrow=[_quote_row()], fetch=[[_item_row()]], fetchval=[1])
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes/11")
-    assert resp.json()["quote_no_editable"] is False
-
-
-def test_get_quote_item_cost_breakdown_hidden_for_customer():
-    """内外视图红线：customer 账号读不到 cost_breakdown（接口层剔除，不靠前端）。"""
-    conn = _FakeConn(fetchrow=[_quote_row()], fetch=[[_item_row()]], fetchval=[None, None])
-    with _patched(conn, CUSTOMER):
-        resp = client.get("/api/v1/quotes/11")
-    assert "cost_breakdown" not in resp.json()["items"][0]
-
-
-def test_get_quote_item_cost_breakdown_visible_for_internal():
-    """内部账号（internal + system_admin）能看到成本分解。"""
-    conn = _FakeConn(fetchrow=[_quote_row()], fetch=[[_item_row()]], fetchval=[None, None])
-    with _patched(conn, INTERNAL_ADMIN):
-        resp = client.get("/api/v1/quotes/11")
-    assert resp.json()["items"][0]["cost_breakdown"] == {"profit": 3.0}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1121,87 +970,6 @@ def test_batch_quote_group_requires_ids_pydantic_422():
 # ════════════════════════════════════════════════════════════════════════════
 # 8. 参考价 / 成本参考价
 # ════════════════════════════════════════════════════════════════════════════
-
-def test_reference_price_shape_and_days():
-    """参考价：count/avg/min/max/median/last_at 为 float/str，口径同 orchestrator。"""
-    conn = _FakeConn(fetchrow=[{
-        "n": 3, "avg": Decimal("2.5"), "min": Decimal("2"),
-        "max": Decimal("3"), "median": Decimal("2.5"), "last_at": _NOW,
-    }])
-    with _patched(conn, CUSTOMER):
-        resp = client.get(
-            "/api/v1/quotes/reference-price?customer_id=3&product_name=field_fence")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert set(body) == {"customer_id", "product_name", "days", "spec_matched",
-                         "count", "avg", "min", "max", "median", "last_at"}
-    assert body["days"] == 180 and body["spec_matched"] is False
-    assert body["count"] == 3 and isinstance(body["avg"], float)
-    assert body["last_at"] == _NOW.isoformat()
-
-
-def test_reference_price_bad_spec_json_422():
-    """两端一致：spec 不是 JSON → 422 同一句错误体。"""
-    _as(CUSTOMER)
-    resp = client.get(
-        "/api/v1/quotes/reference-price?customer_id=3&product_name=x&spec=not-json")
-    assert resp.status_code == 422
-    assert resp.json()["detail"] == {
-        "error": "validation_error", "message": "spec must be a JSON object"}
-
-
-def test_parity_quote_7_reference_price_days_bounds():
-    conn = _FakeConn(fetchrow=[{"n": 0, "avg": None, "min": None,
-                                "max": None, "median": None, "last_at": None}])
-    with _patched(conn, CUSTOMER):
-        assert client.get(
-            "/api/v1/quotes/reference-price?customer_id=3&product_name=x&days=0"
-        ).status_code == 422
-
-
-def test_parity_quote_7b_reference_price_by_product_key_matches_alias():
-    """A 项：按 product_key 查参考价时，product_name 是别名也命中同一产品；
-    旧行（无 product_key）按该产品历史用过的任意英文名回落。"""
-    conn = _FakeConn(fetchrow=[{"n": 1, "avg": Decimal("2.5"),
-                                "min": Decimal("2.5"), "max": Decimal("2.5"),
-                                "median": Decimal("2.5"), "last_at": None}])
-    with _patched(conn, CUSTOMER):
-        resp = client.get(
-            "/api/v1/quotes/reference-price?customer_id=3"
-            "&product_name=Field+Fence&product_key=field_fence")
-    assert resp.status_code == 200, resp.text
-    sql, args = conn.first("FROM quote_order_items")
-    assert "i.spec_snapshot->>'product_key' = $3" in sql
-    assert "SELECT j.product_name FROM quote_order_items j" in sql
-    assert "i.product_name = $4" in sql
-    assert args[2] == "field_fence" and args[3] == "Field Fence"
-
-
-def test_reference_price_without_name_or_key_is_422():
-    """A 项：product_name 与 product_key 都不给 ⇒ 422（不默默匹配空名）。"""
-    _as(CUSTOMER)
-    resp = client.get("/api/v1/quotes/reference-price?customer_id=3")
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["error"] == "validation_error"
-
-
-def test_cost_reference_invalid_spec_422():
-    """两端一致：spec 非 JSON / 非对象 → 422 INVALID_SPEC（同一错误体）。"""
-    _as(CUSTOMER)
-    for raw in ("not-json", "[1,2]"):
-        resp = client.get(
-            "/api/v1/quotes/cost-reference?product_key=x&spec=" + raw)
-        assert resp.status_code == 422, raw
-        assert resp.json()["detail"]["code"] == "INVALID_SPEC"
-
-
-def test_cost_reference_none_when_no_history():
-    """两端一致：无历史成本 → {"reference": null}（前端回退产品定义成本）。"""
-    conn = _FakeConn(fetchrow=[None], fetch=[])
-    with _patched(conn, CUSTOMER):
-        resp = client.get('/api/v1/quotes/cost-reference?product_key=x&spec={}')
-    assert resp.status_code == 200
-    assert resp.json() == {"reference": None}
 
 
 # ════════════════════════════════════════════════════════════════════════════

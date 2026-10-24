@@ -160,23 +160,6 @@ class FxRateOut(BaseModel):
     is_stale: bool
 
 
-@app.get("/api/v1/fx-rates")
-async def list_fx_rates(request: Request, base_currency: str = "USD", quote_currency: str = "CNY",
-                        limit: int = 30, user: dict = Depends(_get_current_user)):
-    async with _acquire(request) as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM fx_rates WHERE base_currency=$1 AND quote_currency=$2"
-            " ORDER BY rate_date DESC LIMIT $3",
-            base_currency, quote_currency, min(max(limit, 1), 365),
-        )
-    return [
-        {"base_currency": r["base_currency"], "quote_currency": r["quote_currency"],
-         "rate": float(r["rate"]), "rate_date": r["rate_date"].isoformat(),
-         "source": r["source"], "is_stale": bool(r["is_stale"])}
-        for r in rows
-    ]
-
-
 @app.get("/api/v1/fx-rates/latest")
 async def latest_fx_rate(request: Request, base_currency: str = "USD", quote_currency: str = "CNY",
                          user: dict = Depends(_get_current_user)):
@@ -394,40 +377,6 @@ def _external_doc_scope(user: dict, next_index: int, tenant_index: int = 1) -> t
             frag += (f" OR {col} IN (SELECT id FROM {table}"
                      f" WHERE tenant_id = ${tenant_index} AND team_id = ${idx})")
     return frag + ")", params
-
-
-@app.get("/api/v1/external-docs")
-async def list_external_docs(request: Request, order_id: Optional[int] = None,
-                             doc_type: Optional[str] = None,
-                             limit: int = Query(default=50, ge=1, le=500),
-                             user: dict = Depends(_get_current_user)):
-    # 恒加 tenant_id（本轮之前**连租户都不过滤**）；随后是行级可见性谓词（见上方 helper）。
-    cond = " AND tenant_id=$1"
-    params: list = [_main.DEFAULT_TENANT]
-    scope_frag, scope_params = _external_doc_scope(user, len(params) + 1)
-    cond += scope_frag
-    params.extend(scope_params)
-    if order_id is not None:
-        params.append(order_id)
-        cond += f" AND order_id=${len(params)}"
-    if doc_type:
-        params.append(doc_type)
-        cond += f" AND doc_type=${len(params)}"
-    async with _acquire(request) as conn:
-        rows = await conn.fetch(
-            f"SELECT id, doc_type, file_name, content_type, file_size, order_id,"
-            f" quote_order_id, inquiry_id, customer_id, status, notes, uploaded_by, created_at"
-            f" FROM external_doc_uploads WHERE 1=1{cond} ORDER BY created_at DESC LIMIT ${len(params)+1}",
-            *params, limit)
-    return [
-        {"id": r["id"], "doc_type": r["doc_type"], "file_name": r["file_name"],
-         "content_type": r["content_type"], "file_size": float(r["file_size"]) if r["file_size"] is not None else None,
-         "order_id": r["order_id"], "quote_order_id": r["quote_order_id"],
-         "inquiry_id": r["inquiry_id"], "customer_id": r["customer_id"],
-         "status": r["status"], "notes": r["notes"], "uploaded_by": r["uploaded_by"],
-         "created_at": r["created_at"].isoformat() if r["created_at"] else None}
-        for r in rows
-    ]
 
 
 @app.get("/api/v1/external-docs/{doc_id}/download")

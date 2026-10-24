@@ -144,36 +144,3 @@ def test_advance_for_order_resolves_quote_chain():
     ))
     assert result["changed"] is True and result["to_stage"] == "shipment"
     assert "FROM quote_orders" in conn.queries[0][0]
-
-
-def test_stage_log_endpoint_shape(monkeypatch):
-    """GET /inquiries/{id}/stage-log：按时间正序返回历史变更（审计/验收入口）。"""
-    class _FakeDb:
-        async def fetchrow(self, request, sql, *args, table=None):
-            return {"id": 9}
-
-        async def fetch(self, request, sql, *args, table=None):
-            return [
-                {"from_stage": "inquiry", "to_stage": "quotation",
-                 "source_event": "quote_created", "actor_id": "3",
-                 "note": None, "created_at": "2026-10-20T01:00:00+00:00"},
-                {"from_stage": "quotation", "to_stage": "order",
-                 "source_event": "order_created", "actor_id": "3",
-                 "note": None, "created_at": "2026-10-20T02:00:00+00:00"},
-            ]
-
-    old = ws_crm_ext.db
-    ws_crm_ext.db = _FakeDb()
-    worker_main.app.dependency_overrides[worker_main._get_current_user] = lambda: ADMIN
-    try:
-        resp = client.get("/api/v1/inquiries/9/stage-log")
-    finally:
-        ws_crm_ext.db = old
-        worker_main.app.dependency_overrides.clear()
-
-    assert resp.status_code == 200
-    items = resp.json()["items"]
-    assert [i["to_stage"] for i in items] == ["quotation", "order"]
-    assert set(items[0]) == {
-        "from_stage", "to_stage", "source_event", "actor_id", "note", "created_at",
-    }

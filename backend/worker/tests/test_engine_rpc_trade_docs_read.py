@@ -246,29 +246,6 @@ def _post_detail(body: dict | None = None, token: str | None = None):
 # 1. 旧路径（提取后）：响应 + SQL 文本/参数/顺序必须与 fixture（= 提取前）一致
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_old_list_response_and_sql_match_fixture(old_path_db):
-    old_path_db.mode = "list"
-    _as_user()
-    resp = client.get("/api/v1/trade-docs?" + LIST_FIXTURE["endpoint"]["query_string"])
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == LIST_FIXTURE["response"]
-    assert len(old_path_db.calls) == len(LIST_FIXTURE["old_sql"])
-    for actual, expected in zip(old_path_db.calls, LIST_FIXTURE["old_sql"]):
-        assert actual[0] == expected["sql"], "SQL 文本变了（提取不得改谓词/列/排序）"
-        assert actual[1] == expected["params"], "绑定参数变了"
-
-
-def test_old_detail_response_and_sql_match_fixture(old_path_db):
-    old_path_db.mode = "detail"
-    _as_user()
-    resp = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == DETAIL_FIXTURE["response"]
-    assert len(old_path_db.calls) == len(DETAIL_FIXTURE["old_sql"])
-    for actual, expected in zip(old_path_db.calls, DETAIL_FIXTURE["old_sql"]):
-        assert actual[0] == expected["sql"], "SQL 文本变了"
-        assert actual[1] == expected["params"]
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # 2. 新路径（门面供数）：同一输入 → 与旧路径逐字段一致，且零 DB 调用
@@ -281,32 +258,6 @@ def _bomb_db(monkeypatch):
     for name in ("fetch", "fetchval", "fetchrow", "execute", "acquire"):
         monkeypatch.setattr(worker_main.db, name, _boom, raising=False)
     monkeypatch.setattr(worker_main, "_acquire", _boom)
-
-
-def test_new_list_identical_to_old_and_fixture(old_path_db, monkeypatch):
-    old_path_db.mode = "list"
-    _as_user()
-    old = client.get("/api/v1/trade-docs?" + LIST_FIXTURE["endpoint"]["query_string"]).json()
-    worker_main.app.dependency_overrides.clear()
-    _bomb_db(monkeypatch)
-    envelope = _post_list().json()
-    assert envelope["status"] == 200
-    assert _dumps(envelope["body"]) == _dumps(old)
-    assert _dumps(envelope["body"]) == _dumps(LIST_FIXTURE["response"])
-    assert GOLDEN_DIFF.diff_bodies(old, envelope["body"]) == []
-
-
-def test_new_detail_identical_to_old_and_fixture(old_path_db, monkeypatch):
-    old_path_db.mode = "detail"
-    _as_user()
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"]).json()
-    worker_main.app.dependency_overrides.clear()
-    _bomb_db(monkeypatch)
-    envelope = _post_detail().json()
-    assert envelope["status"] == 200
-    assert _dumps(envelope["body"]) == _dumps(old)
-    assert _dumps(envelope["body"]) == _dumps(DETAIL_FIXTURE["response"])
-    assert GOLDEN_DIFF.diff_bodies(old, envelope["body"]) == []
 
 
 def test_new_path_zero_db_calls(monkeypatch):
@@ -392,60 +343,6 @@ def test_rpc_rejects_actor_mismatch():
     assert resp.json()["detail"]["error"] == "engine_rpc_payload_invalid"
 
 
-def test_list_teamless_403_same(old_path_db):
-    """无团队客户：旧路径在拼谓词前 403 NO_TEAM ⇒ 内核同一份判定给同样 body。"""
-    teamless = dict(ACTOR, team_id=None)
-    old_path_db.mode = "list"
-    _as_user(teamless)
-    old = client.get("/api/v1/trade-docs?" + LIST_FIXTURE["endpoint"]["query_string"])
-    assert old.status_code == 403
-    assert old.json()["detail"]["code"] == "NO_TEAM"
-    resp = _post_list(_list_body(actor=teamless), token=_engine_token(actor=teamless))
-    envelope = resp.json()
-    assert envelope["status"] == 403
-    assert envelope["body"] == old.json()
-
-
-def test_detail_missing_404_same(old_path_db):
-    old_path_db.mode = "detail"
-    old_path_db.detail_ds = dict(DETAIL_FIXTURE["datasets"], trade_docs=[])
-    _as_user()
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert old.status_code == 404
-    assert old.json()["detail"]["code"] == "DOC_NOT_FOUND"
-    envelope = _post_detail(
-        _detail_body(datasets=dict(DETAIL_FIXTURE["datasets"], trade_docs=[]))).json()
-    assert envelope["status"] == 404
-    assert envelope["body"] == old.json()
-
-
-def test_detail_invisible_404_same(old_path_db):
-    row = dict(DETAIL_FIXTURE["datasets"]["trade_docs"][0],
-               owner_id="999", owner_scope="private", team_id=777)
-    old_path_db.mode = "detail"
-    old_path_db.detail_ds = dict(DETAIL_FIXTURE["datasets"], trade_docs=[])
-    _as_user()
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert old.status_code == 404
-    envelope = _post_detail(
-        _detail_body(datasets=dict(DETAIL_FIXTURE["datasets"], trade_docs=[row]))).json()
-    assert envelope["status"] == 404
-    assert envelope["body"] == old.json()
-
-
-def test_detail_teamless_404(old_path_db):
-    """无团队客户：详情 _require_doc_visible 直接 404（不是 403）。"""
-    teamless = dict(ACTOR, team_id=None)
-    old_path_db.mode = "detail"
-    _as_user(teamless)
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert old.status_code == 404
-    resp = _post_detail(_detail_body(actor=teamless), token=_engine_token(actor=teamless))
-    envelope = resp.json()
-    assert envelope["status"] == 404
-    assert envelope["body"] == old.json()
-
-
 def test_detail_id_mismatch_400():
     envelope = _post_detail(_detail_body(doc_id=12)).json()
     assert envelope["status"] == 400
@@ -461,36 +358,6 @@ def test_list_kernel_visibility_defense_in_depth():
     datasets["trade_docs_total"] = [{"count": 3}]
     envelope = _post_list(_list_body(datasets=datasets)).json()
     assert [i["id"] for i in envelope["body"]["items"]] == [11, 12]
-
-
-def test_list_invalid_query_422_same(old_path_db):
-    for qs, query in (
-        ("order_id=abc", {"order_id": "abc"}),
-        ("page=abc", {"page": "abc"}),
-        ("page_size=abc", {"page_size": "abc"}),
-    ):
-        old_path_db.mode = "list"
-        _as_user()
-        old = client.get("/api/v1/trade-docs?" + qs)
-        assert old.status_code == 422, (qs, old.text)
-        raw = {"doc_type": None, "status": None, "order_id": None,
-               "page": None, "page_size": None}
-        raw.update(query)
-        envelope = _post_list(_list_body(query=raw)).json()
-        assert envelope["status"] == 422
-        assert envelope["body"] == old.json(), qs
-
-
-def test_list_multi_bad_query_errors_order_same(old_path_db):
-    old_path_db.mode = "list"
-    _as_user()
-    old = client.get("/api/v1/trade-docs?page=abc&order_id=x&page_size=y")
-    assert old.status_code == 422
-    envelope = _post_list(_list_body(
-        query={"doc_type": None, "status": None, "order_id": "x",
-               "page": "abc", "page_size": "y"})).json()
-    assert envelope["status"] == 422
-    assert envelope["body"] == old.json()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -535,19 +402,3 @@ def test_rpc_entry_has_no_db_access(fn_name):
     src = _strip_docstrings(inspect.getsource(getattr(worker_main, fn_name)))
     for forbidden in ("_db.", "_acquire", "asyncpg", "db.fetch", "conn.fetch"):
         assert forbidden not in src, fn_name + " 不得包含取数代码: " + forbidden
-
-
-def test_old_and_new_paths_share_one_projection():
-    import inspect
-
-    old_list = inspect.getsource(worker_main.list_trade_docs)
-    old_detail = inspect.getsource(worker_main.get_trade_doc)
-    new_list = inspect.getsource(worker_main.trade_doc_list_from_datasets)
-    new_detail = inspect.getsource(worker_main.trade_doc_detail_from_datasets)
-    assert "_trade_doc_list_payload" in old_list
-    assert "_trade_doc_list_payload" in new_list
-    assert "_trade_doc_detail_payload" in old_detail
-    assert "_trade_doc_detail_payload" in new_detail
-    # refs 也必须是同一份纯函数
-    assert "_doc_link_refs" in inspect.getsource(worker_main._doc_upstream_links)
-    assert "_doc_link_refs" in new_detail

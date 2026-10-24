@@ -2515,48 +2515,6 @@ class QuotationCreateBody(BaseModel):
     source: str = "manual"
 
 
-@app.get("/api/v1/quotations")
-async def list_quotations_api(
-    request: Request,
-    customer_id: Optional[str] = None,
-    product_category: Optional[str] = None,
-    spec_hash: Optional[str] = None,
-    limit: int = 100,
-    user: dict = Depends(_get_current_user),
-):
-    """查询历史报价记录（保留入口之一，前端「报价历史」页）。"""
-    where = ["tenant_id = $1"]
-    params: list = [DEFAULT_TENANT]
-    idx = 2
-    for col, val in (
-        ("customer_id", customer_id),
-        ("product_category", product_category),
-        ("spec_hash", spec_hash),
-    ):
-        if val:
-            where.append(f"{col} = ${idx}")
-            params.append(val)
-            idx += 1
-    w = " AND ".join(where)
-    lim = max(1, min(limit, 500))
-    items = await db.fetch(
-        request,
-        f"""SELECT id, customer_id, product_category, product_spec, spec_hash,
-                   unit_price, currency, unit, discount, min_quantity,
-                   source, notes, effective_from, created_at
-            FROM quotations WHERE {w}
-            ORDER BY effective_from DESC LIMIT {lim}""",
-        *params,
-        table="quotations",
-    )
-    total = await db.fetchval(
-        request, f"SELECT COUNT(*) FROM quotations WHERE {w}", *params
-    )
-    for r in items:
-        r["id"] = str(r["id"])
-    return {"items": items, "total": total}
-
-
 @app.post("/api/v1/quotations", status_code=201)
 async def create_quotation_manual(
     body: QuotationCreateBody,
@@ -3367,43 +3325,6 @@ async def wizard_propose_attribute(
 
 
 # ── 阶段 3 · 事件列表（GET /api/v1/events，与既有 POST 同表，倒序分页）──
-@app.get("/api/v1/events")
-async def list_events_api(
-    request: Request,
-    page: int = 1,
-    page_size: int = 20,
-    event_type: str = "",
-    user: dict = Depends(_get_current_user),
-):
-    """事件审计列表 —— 平台运营专用。
-
-    2026-10-20 前后端对齐审计（P1-1）：前端 `/events` 整页藏在 `RouteGuard adminOnly` 里，
-    但本端点此前只挂 `Depends(_get_current_user)` ⇒ **任意 customer token 都能读全租户事件**
-    （含其他客户 payload）。前端隐藏不是权限边界（同一教训见 `_require_platform_ops`
-    的 docstring）：这里与 6 个 `/api/v1/admin/*` 端点同口径，补上平台运营闸门。
-    """
-    _require_platform_ops(user)
-    page = max(page, 1)
-    page_size = min(max(page_size, 1), 100)
-    where = "WHERE tenant_id = $1"
-    args: list = [DEFAULT_TENANT]
-    if event_type:
-        args.append(event_type)
-        where += f" AND event_type = ${len(args)}"
-    total = await db.fetchval(request, f"SELECT count(*) FROM events {where}", *args)
-    args.extend([page_size, (page - 1) * page_size])
-    rows = await db.fetch(
-        request,
-        f"""SELECT * FROM events {where}
-              ORDER BY id DESC LIMIT ${len(args) - 1} OFFSET ${len(args)}""",
-        *args,
-    )
-    return {
-        "items": [_row_to_dict(r) for r in rows],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
 
 
 # ── 阶段 3 · 管理（/api/v1/admin/*；yaml→DB 等语义差见 docs/archive/2026-10-20-closeout/CLEANUP_LOG.md）──
@@ -5443,56 +5364,6 @@ async def _require_doc_issuer(request: Request, user: dict, d) -> None:
         })
 
 
-@app.get("/api/v1/trade-docs")
-async def list_trade_docs(request: Request, doc_type: str = None, status: str = None,
-                          order_id: int = None, page: int = 1, page_size: int = 20,
-                          user: dict = Depends(_get_current_user)):
-    """单证列表（分页 + doc_type/status/order 筛选）。"""
-    where = ["tenant_id = $1"]
-    params: list = [DEFAULT_TENANT]
-    idx = 2
-    if doc_type:
-        where.append(f"doc_type = ${idx}"); params.append(doc_type); idx += 1
-    if status:
-        where.append(f"status = ${idx}"); params.append(status); idx += 1
-    if order_id:
-        where.append(f"order_id = ${idx}"); params.append(order_id); idx += 1
-    scope_sql, scope_params = _doc_scope_sql(user, idx)
-    params.extend(scope_params); idx += len(scope_params)
-    where_sql = " AND ".join(where) + scope_sql
-    async with _acquire(request) as conn:
-        total = await conn.fetchval(f"SELECT COUNT(*) FROM trade_docs WHERE {where_sql}", *params)
-        rows = await conn.fetch(
-            f"SELECT * FROM trade_docs WHERE {where_sql} ORDER BY created_at DESC, id DESC LIMIT ${idx} OFFSET ${idx+1}",
-            *params, page_size, (max(1, page) - 1) * page_size,
-        )
-        later_ids: set = set()
-        for r in rows:
-            if r["quote_id"] is not None:
-                later = await conn.fetchval(
-                    "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
-                    " AND id>$3 LIMIT 1", DEFAULT_TENANT, r["quote_id"], r["id"])
-            elif r["order_id"] is not None:
-                later = await conn.fetchval(
-                    "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2"
-                    " AND id>$3 LIMIT 1", DEFAULT_TENANT, r["order_id"], r["id"])
-            else:
-                later = None
-            if later:
-                later_ids.add(int(r["id"]))
-        # 定时对账结论（TODO(TODO:A8/A9)）：每页多一条查询，让列表能一眼标出「已变更」。
-        # 没有对账记录 = 从未巡到（null），界面不显示任何标识（不冒充"没问题"）。
-        checks: list = []
-        if rows:
-            checks = await conn.fetch(
-                "SELECT trade_doc_id, matches, reason, render_version_drift, checked_at"
-                " FROM trade_doc_render_checks WHERE tenant_id=$1"
-                " AND trade_doc_id = ANY($2::bigint[])",
-                DEFAULT_TENANT, [r["id"] for r in rows],
-            )
-    return _trade_doc_list_payload(rows, total, page, page_size, later_ids, checks)
-
-
 # ── 单证关系（边表 entity_links）─────────────────────────────────────────────
 # 为什么 Worker 也要读/写这张表：`trade_docs` 只有 `order_id` / `quote_id` 两列，
 # **询盘来源**与**单证派生源**没有列可挂 —— 触发器（trg_trade_docs_links）只能派生
@@ -5803,30 +5674,6 @@ async def create_trade_doc(request: Request, body: dict,
         from_ws="trade_docs", to_ws="trade_docs",
     )
     return _dp.doc_dict(d)
-
-
-@app.get("/api/v1/trade-docs/{doc_id}")
-async def get_trade_doc(doc_id: int, request: Request,
-                        user: dict = Depends(_get_current_user)):
-    d = await db.fetchrow(request, "SELECT * FROM trade_docs WHERE tenant_id=$1 AND id=$2",
-                          DEFAULT_TENANT, doc_id, table="trade_docs")
-    if not d:
-        raise HTTPException(status_code=404, detail={"error": "not_found", "code": "DOC_NOT_FOUND"})
-    _require_doc_visible(user, d)
-    # 上游 refs 一律来自**列 + 边表**（旧 `trade_doc_*_refs` 已改名留档、不再读）
-    async with _acquire(request) as conn:
-        refs = await _doc_upstream_links(conn, d)
-        if d["quote_id"] is not None:
-            later = await conn.fetchval(
-                "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND quote_id=$2"
-                " AND id>$3 LIMIT 1", DEFAULT_TENANT, d["quote_id"], doc_id)
-        elif d["order_id"] is not None:
-            later = await conn.fetchval(
-                "SELECT 1 FROM trade_docs WHERE tenant_id=$1 AND order_id=$2"
-                " AND id>$3 LIMIT 1", DEFAULT_TENANT, d["order_id"], doc_id)
-        else:
-            later = None
-    return _trade_doc_detail_payload(d, refs, later)
 
 
 @app.patch("/api/v1/trade-docs/{doc_id}")

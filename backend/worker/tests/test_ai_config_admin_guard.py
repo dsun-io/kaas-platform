@@ -50,6 +50,13 @@ WRITE_ENDPOINTS = (
     ("post", "/api/v1/ai/tasks/config_validation/run", {"payload": {}}),
 )
 ALL_ENDPOINTS = READ_ENDPOINTS + WRITE_ENDPOINTS
+# P3 步骤3（2026-10-24）：以下 GET handler 已删除（门面已放量，off 回退改为回滚代码）；
+# 内核不再注册这些路由 ⇒ 从「期望路由面/鉴权矩阵」里减去，而不是放宽断言。
+ALL_ENDPOINTS = [
+    item for item in ALL_ENDPOINTS
+    if item[1] not in ("/api/v1/ai/providers", "/api/v1/ai/usage")
+]
+
 
 
 class _FakeDb:

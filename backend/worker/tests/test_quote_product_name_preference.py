@@ -239,44 +239,6 @@ def _capture_reference(monkeypatch):
     return seen
 
 
-def test_reference_price_matches_by_product_key_and_any_alias(monkeypatch):
-    """product_key 身份优先；旧行按「本单所选名 + 该产品历史用过的任何英文名」回落。"""
-    seen = _capture_reference(monkeypatch)
-    resp = _get(
-        "/api/v1/quotes/reference-price?customer_id=3"
-        "&product_name=Field+Fence&product_key=field_fence")
-    assert resp.status_code == 200, resp.text
-    sql = seen["sql"]
-    assert "i.spec_snapshot->>'product_key' = $3" in sql
-    assert "SELECT j.product_name FROM quote_order_items j" in sql
-    assert "j.spec_snapshot->>'product_key' = $3" in sql
-    assert "i.product_name = $4" in sql          # 本单所选名（换名后仍命中同一产品）
-    args = seen["args"]
-    assert args[0] == "default" and args[1] == 3
-    assert args[2] == "field_fence" and args[3] == "Field Fence"
-    assert args[4] == 180
-
-
-def test_reference_price_legacy_call_with_only_name_keeps_old_behavior(monkeypatch):
-    """旧调用方只传 product_name ⇒ 仍按名字精确匹配（不破坏既有语义）。"""
-    seen = _capture_reference(monkeypatch)
-    resp = _get(
-        "/api/v1/quotes/reference-price?customer_id=3&product_name=Field+Fence")
-    assert resp.status_code == 200, resp.text
-    sql = seen["sql"]
-    assert "i.product_name = $3" in sql
-    assert "spec_snapshot->>'product_key'" not in sql
-    assert seen["args"][:3] == ("default", 3, "Field Fence")
-
-
-def test_reference_price_requires_name_or_key(monkeypatch):
-    """两者都不给 ⇒ 422（不再默默按空名匹配出 0 条）。"""
-    _capture_reference(monkeypatch)
-    resp = _get("/api/v1/quotes/reference-price?customer_id=3")
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["error"] == "validation_error"
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # 3. 继承链：单证快照原样带出选中英文名（order → doc_payload）
 # ════════════════════════════════════════════════════════════════════════════

@@ -475,102 +475,6 @@ async def reject_item_change_request(
 
 # ── 端点：审批中心（D-12）──────────────────────────────────────────────────
 
-@app.get("/api/v1/approvals")
-async def list_approvals(
-    request: Request,
-    view: str = Query("pending"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
-    user: dict = Depends(_get_current_user),
-):
-    """审批中心聚合列表（本期仅 order_item_change 一种类型）。
-
-    - `pending` 待我审批：我是路由审批人的 pending + 未指定审批人时管理员的 pending；
-    - `mine`    我发起的：requested_by = 我（任何状态）；
-    - `done`    已处理：我决定过的（approved / rejected）。
-    """
-    if view not in _APPROVAL_VIEWS:
-        raise HTTPException(status_code=422, detail={
-            "error": "validation", "code": "INVALID_VIEW",
-            "field": "view", "value": view, "allowed": list(_APPROVAL_VIEWS),
-        })
-    where = ["r.tenant_id = $1"]
-    params: list = [DEFAULT_TENANT]
-    if view == "pending":
-        if _is_admin_role(user.get("role")):
-            # 管理员兜底：看得见全部待批（避免指定审批人躺平时流程卡死）
-            where.append("r.status = 'pending'")
-        else:
-            params.append(int(user["id"]))
-            where.append("r.status = 'pending'")
-            where.append(
-                "(EXISTS (SELECT 1 FROM team_approvers a"
-                "         WHERE a.team_id = r.team_id AND a.user_id = $%d)"
-                " OR (NOT EXISTS (SELECT 1 FROM team_approvers a2"
-                "              WHERE a2.team_id = r.team_id)"
-                "     AND EXISTS (SELECT 1 FROM orders o"
-                "                 WHERE o.tenant_id = r.tenant_id AND o.id = r.order_id"
-                "                   AND o.team_id = $%d)))"
-                % (len(params), len(params)))
-    elif view == "mine":
-        params.append(int(user["id"]))
-        where.append(f"r.requested_by = ${len(params)}")
-    else:  # done
-        params.append(int(user["id"]))
-        where.append(f"r.decided_by = ${len(params)}")
-        where.append("r.status IN ('approved','rejected')")
-    cond = " AND ".join(where)
-    total = await db.fetchval(
-        request,
-        f"SELECT count(*) FROM order_item_change_requests r WHERE {cond}", *params)
-    rows = await db.fetch(
-        request,
-        "SELECT r.*, o.order_no, o.status AS order_status, o.total_amount,"
-        " o.currency, u.display_name AS requester_name"
-        " FROM order_item_change_requests r"
-        " LEFT JOIN orders o ON o.tenant_id = r.tenant_id AND o.id = r.order_id"
-        " LEFT JOIN users u ON u.id = r.requested_by"
-        f" WHERE {cond} ORDER BY r.created_at DESC, r.id DESC"
-        f" LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}",
-        *params, page_size, (page - 1) * page_size,
-    )
-    # A2（P0-A）：审批行直接带「受影响单证」清单 —— 详情抽屉不必再拉 /trade-docs
-    # （非管理员可能 403；静默降级会让"已开合同可能对不上货"的提示消失）。
-    # **整页一次 IN 查完**，禁止逐行再查（N+1）；形状与批准响应的 affected_docs 相同。
-    row_dicts = [dict(r) for r in rows]
-    order_ids = sorted({int(d["order_id"]) for d in row_dicts
-                        if d.get("order_id") is not None})
-    docs_by_order: dict[int, list[dict]] = {}
-    if order_ids:
-        doc_rows = await db.fetch(
-            request,
-            "SELECT order_id, id, doc_type, doc_no, status FROM trade_docs"
-            " WHERE tenant_id=$1 AND order_id = ANY($2::bigint[]) ORDER BY id",
-            DEFAULT_TENANT, order_ids,
-        )
-        for doc in doc_rows:
-            dd = dict(doc)
-            docs_by_order.setdefault(int(dd["order_id"]), []).append({
-                "id": dd.get("id"),
-                "doc_type": dd.get("doc_type"),
-                "doc_no": dd.get("doc_no"),
-                "status": dd.get("status"),
-            })
-    items = []
-    for d in row_dicts:
-        items.append({
-            **_request_dict(d, order_no=d.get("order_no")),
-            "order_status": d.get("order_status"),
-            "order_total_amount": (float(d["total_amount"])
-                                   if d.get("total_amount") is not None else None),
-            "order_currency": d.get("currency"),
-            "requester_name": d.get("requester_name"),
-            # 无单证 = []（不是 None：前端直接 .length / 直接渲染空提示）
-            "affected_docs": (docs_by_order.get(int(d["order_id"]), [])
-                              if d.get("order_id") is not None else []),
-        })
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
-
 
 # ── 端点：站内通知 ────────────────────────────────────────────────────────
 
@@ -613,20 +517,6 @@ async def list_notifications(
     )
     return {"items": [_notification_dict(dict(r)) for r in rows],
             "total": total, "page": page, "page_size": page_size}
-
-
-@app.get("/api/v1/notifications/unread-count")
-async def unread_notification_count(
-    request: Request, user: dict = Depends(_get_current_user),
-):
-    """铃铛角标（与审批中心侧边栏角标同源计数）。"""
-    count = await db.fetchval(
-        request,
-        "SELECT count(*) FROM notifications"
-        " WHERE tenant_id=$1 AND user_id=$2 AND read_at IS NULL",
-        DEFAULT_TENANT, int(user["id"]),
-    )
-    return {"unread": int(count or 0)}
 
 
 @app.post("/api/v1/notifications/{notification_id}/read")

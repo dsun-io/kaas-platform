@@ -181,22 +181,6 @@ async def _next_code(request: Request, team_id: int) -> str:
     })
 
 
-@app.get("/api/v1/tax-archives")
-async def list_tax_archives(
-    request: Request,
-    include_inactive: bool = Query(False),
-    user: dict = Depends(_get_current_user),
-):
-    where, params = _where(user, include_inactive)
-    rows = await db.fetch(
-        request,
-        f"SELECT * FROM tax_archives WHERE {where}"
-        " ORDER BY effective_from DESC NULLS LAST, updated_at DESC",
-        *params, table="tax_archives",
-    )
-    return {"items": [_row_out(r) for r in rows], "total": len(rows)}
-
-
 @app.post("/api/v1/tax-archives", status_code=201)
 async def create_tax_archive(
     request: Request,
@@ -311,20 +295,6 @@ async def _product_tax_or_404(request: Request, user: dict, rate_id: int):
             "error": "not_found", "code": "PRODUCT_TAX_NOT_FOUND",
         })
     return row
-
-
-@app.get("/api/v1/product-tax-rates")
-async def list_product_tax_rates(
-    request: Request,
-    user: dict = Depends(_get_current_user),
-):
-    where, params = _product_tax_where(user)
-    rows = await db.fetch(
-        request,
-        f"SELECT * FROM product_tax_rates WHERE {where} ORDER BY product_key ASC",
-        *params, table="product_tax_rates",
-    )
-    return {"items": [_product_tax_out(r) for r in rows], "total": len(rows)}
 
 
 @app.post("/api/v1/product-tax-rates", status_code=201)

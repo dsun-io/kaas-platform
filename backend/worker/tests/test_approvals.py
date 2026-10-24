@@ -557,90 +557,6 @@ def _approval_row(**over):
     return row
 
 
-def test_approvals_pending_lists_only_requests_i_must_decide():
-    db = _StubDb(fetchval=[1], fetch=[[_approval_row()]])
-    with _patched(db=db, user=APPROVER):
-        resp = client.get("/api/v1/approvals?view=pending")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["total"] == 1
-    item = body["items"][0]
-    # 审批卡片要能直接看出"哪张单、多少钱、谁提的"
-    assert item["order_no"] == "ORD-US-ACM-1"
-    assert item["order_status"] == "confirmed"
-    assert item["order_total_amount"] == 3180.0
-    assert item["requester_name"] == "属主"
-    assert item["items"] == [] and item["snapshot"] == []
-
-    sql = db.sql()
-    assert "FROM team_approvers a" in sql
-    assert "NOT EXISTS (SELECT 1 FROM team_approvers a2" in sql
-    # 未指定审批人 ⇒ 团队管理员（ orders.team_id = 我 ）也算待我审批
-    assert "AND o.team_id = $2" in sql
-
-
-def test_approvals_admin_sees_all_pending():
-    """管理员兜底视野：全部待批，避免指定审批人躺平时流程卡死。"""
-    db = _StubDb(fetchval=[2], fetch=[[_approval_row(), _approval_row(id=6)]])
-    with _patched(db=db, user=ADMIN):
-        resp = client.get("/api/v1/approvals")
-    assert resp.status_code == 200
-    assert resp.json()["total"] == 2
-    # 管理员不需要按人过滤
-    assert "FROM team_approvers a" not in db.sql()
-
-
-def test_approvals_mine_and_done_views():
-    db = _StubDb(fetchval=[1], fetch=[[_approval_row()]])
-    with _patched(db=db, user=OWNER):
-        assert client.get("/api/v1/approvals?view=mine").status_code == 200
-    assert "r.requested_by = $2" in db.sql()
-
-    db = _StubDb(fetchval=[1], fetch=[[_approval_row(status="rejected")]])
-    with _patched(db=db, user=APPROVER):
-        assert client.get("/api/v1/approvals?view=done").status_code == 200
-    assert "r.decided_by = $2" in db.sql()
-    assert "r.status IN ('approved','rejected')" in db.sql()
-
-
-def test_approvals_list_carries_affected_docs_in_one_query():
-    """A2（P0-A）：审批行带受影响单证清单，整页**一次 IN 查完**（禁止 N+1）。
-
-    详情抽屉不再拉 /trade-docs（非管理员可能 403 ⇒ 静默降级会让
-    「已开合同可能对不上货」的提示消失）。形状与批准响应的 affected_docs 相同。
-    """
-    db = _StubDb(
-        fetchval=[2],
-        fetch=[
-            [_approval_row(), _approval_row(id=6, order_id=22)],
-            [{"order_id": 22, "id": 30, "doc_type": "contract",
-              "doc_no": "C-1", "status": "issued"}],
-        ],
-    )
-    with _patched(db=db, user=ADMIN):
-        resp = client.get("/api/v1/approvals")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    # 无单证 = []（不是 None；前端直接 .length）
-    assert body["items"][0]["affected_docs"] == []
-    assert body["items"][1]["affected_docs"] == [
-        {"id": 30, "doc_type": "contract", "doc_no": "C-1", "status": "issued"}]
-
-    docs_calls = [c for c in db.calls if "FROM trade_docs" in c[0]]
-    assert len(docs_calls) == 1, docs_calls          # 整页一次，不是逐行查
-    assert "order_id = ANY($2::bigint[])" in docs_calls[0][0]
-    assert docs_calls[0][1] == ("default", [21, 22])
-
-
-def test_approvals_rejects_unknown_view():
-    db = _StubDb()
-    with _patched(db=db, user=APPROVER):
-        resp = client.get("/api/v1/approvals?view=all")
-    assert resp.status_code == 422
-    assert resp.json()["detail"]["code"] == "INVALID_VIEW"
-    assert resp.json()["detail"]["allowed"] == ["pending", "mine", "done"]
-
-
 # ── 站内通知 ──────────────────────────────────────────────────────────────
 
 def _notif_row(**over):
@@ -669,14 +585,6 @@ def test_notifications_list_unread_filter_and_pagination():
     assert set(item) == {"id", "type", "title", "body", "link", "ref_type",
                          "ref_id", "read_at", "created_at"}
     assert "read_at IS NULL" in db.sql()
-
-
-def test_notifications_unread_count():
-    db = _StubDb(fetchval=[3])
-    with _patched(db=db, user=APPROVER):
-        resp = client.get("/api/v1/notifications/unread-count")
-    assert resp.status_code == 200
-    assert resp.json() == {"unread": 3}
 
 
 def test_mark_notification_read_only_own():

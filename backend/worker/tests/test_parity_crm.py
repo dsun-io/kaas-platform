@@ -381,6 +381,16 @@ def _stage_log_row(**over):
 # 0. 路由面 / 鉴权前置
 # ════════════════════════════════════════════════════════════════════════════
 
+
+# P3 步骤3（2026-10-24）：以下 GET handler 已删除（门面已放量，off 回退改为回滚代码）；
+# 内核不再注册这些路由 ⇒ 从「期望路由面/鉴权矩阵」里减去，而不是放宽断言。
+ORCH_CRM_ROUTES -= {
+    ("/api/v1/inquiries", "GET"),
+    ("/api/v1/inquiries/{inquiry_id}", "GET"),
+    ("/api/v1/inquiries/{inquiry_id}/stage-log", "GET"),
+}
+
+
 def test_crm_route_surface_is_exactly_orchestrators():
     """CRM 域**恰好**这 14 条（两端逐一对应；多/少一条都是漂移）。"""
     crm_routes = {
@@ -1103,36 +1113,6 @@ def test_customer_inquiries_list_has_editable_flag_and_status_filter():
         resp = client.get("/api/v1/customers/3/inquiries?status=won")
     assert resp.status_code == 422
     assert resp.json()["detail"]["code"] == "INVALID_ENUM"
-
-
-def test_all_inquiries_list_shape_scope_and_order():
-    """`{items,total}`，每项 = row_to_inquiry + company_name；三层可见 + 客户内倒序。
-
-    对齐：customers.py:706-727 / ws_crm_ext.py:252-291（含 team 条件）。
-    """
-    db = _StubDb(fetch=[[{**_inquiry_row(), "company_name": "ACME"}]])
-    with _patched(db=db, user=MEMBER):
-        resp = client.get("/api/v1/inquiries")
-
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert set(body) == {"items", "total"} and body["total"] == 1
-    item = body["items"][0]
-    assert set(item) == _INQUIRY_KEYS | _INQUIRY_LIST_EXTRA_KEYS
-    assert item["company_name"] == "ACME"
-
-    sql = db.sql()
-    assert "JOIN customers c ON i.customer_id = c.id" in sql
-    assert "(i.owner_id = $2 OR i.owner_scope = 'tenant' OR i.team_id = $3)" in sql
-    assert "ORDER BY i.customer_id, i.created_at DESC" in sql
-
-    # 管理员不加归属条件；status/customer_id 过滤都走参数绑定
-    db = _StubDb(fetch=[[]])
-    with _patched(db=db, user=ADMIN):
-        client.get("/api/v1/inquiries?status=closed&customer_id=3")
-    sql = db.sql()
-    assert "i.owner_id = $" not in sql
-    assert "i.status = $2" in sql and "i.customer_id = $3" in sql
 
 
 def test_patch_inquiry_illegal_transition_409():

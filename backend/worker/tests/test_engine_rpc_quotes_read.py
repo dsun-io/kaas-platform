@@ -271,32 +271,6 @@ def _post_detail(body: dict | None = None, token: str | None = None, actor: dict
 # 1. 旧路径（提取后）：响应 + SQL 文本/参数/顺序必须与 fixture（= 提取前）一致
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_old_list_response_and_sql_match_fixture(old_path_db):
-    old_path_db.mode = "list"
-    _as_user()
-    resp = client.get("/api/v1/quotes?" + LIST_FIXTURE["endpoint"]["query_string"])
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == LIST_FIXTURE["response"], (
-        "旧列表响应与 fixture 不一致（提取改了投影/顺序）")
-    assert len(old_path_db.calls) == len(LIST_FIXTURE["old_sql"])
-    for actual, expected in zip(old_path_db.calls, LIST_FIXTURE["old_sql"]):
-        assert actual[0] == expected["sql"], "SQL 文本变了（提取不得改谓词/列/排序）"
-        assert actual[1] == expected["params"], "绑定参数变了（提取不得改谓词）"
-
-
-def test_old_detail_response_and_sql_match_fixture(old_path_db):
-    old_path_db.mode = "detail"
-    _as_user()
-    resp = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == DETAIL_FIXTURE["response"], (
-        "旧详情响应与 fixture 不一致（提取改了投影/顺序）")
-    assert len(old_path_db.calls) == len(DETAIL_FIXTURE["old_sql"])
-    for actual, expected in zip(old_path_db.calls, DETAIL_FIXTURE["old_sql"]):
-        assert actual[0] == expected["sql"], "SQL 文本变了"
-        # 详情行项查询参数是 [tenant, id]；SQL 里无 scope 片段
-        assert actual[1] == expected["params"], "绑定参数变了"
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # 2. 新路径（门面供数）：同一输入 → 与旧路径逐字段一致，且零 DB 调用
@@ -310,38 +284,6 @@ def _bomb_db(monkeypatch):
     monkeypatch.setattr(worker_main.db, "fetch", _boom)
     monkeypatch.setattr(worker_main.db, "acquire", _boom)
     monkeypatch.setattr(worker_main, "_acquire", _boom)
-
-
-def test_new_list_identical_to_old_and_fixture(old_path_db, monkeypatch):
-    old_path_db.mode = "list"
-    _as_user()
-    old = client.get("/api/v1/quotes?" + LIST_FIXTURE["endpoint"]["query_string"]).json()
-    worker_main.app.dependency_overrides.clear()
-    _bomb_db(monkeypatch)
-    resp = _post_list()
-    assert resp.status_code == 200, resp.text
-    envelope = resp.json()
-    assert envelope["status"] == 200
-    new = envelope["body"]
-    assert _dumps(new) == _dumps(old)
-    assert _dumps(new) == _dumps(LIST_FIXTURE["response"])
-    assert GOLDEN_DIFF.diff_bodies(old, new) == []
-
-
-def test_new_detail_identical_to_old_and_fixture(old_path_db, monkeypatch):
-    old_path_db.mode = "detail"
-    _as_user()
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"]).json()
-    worker_main.app.dependency_overrides.clear()
-    _bomb_db(monkeypatch)
-    resp = _post_detail()
-    assert resp.status_code == 200, resp.text
-    envelope = resp.json()
-    assert envelope["status"] == 200
-    new = envelope["body"]
-    assert _dumps(new) == _dumps(old)
-    assert _dumps(new) == _dumps(DETAIL_FIXTURE["response"])
-    assert GOLDEN_DIFF.diff_bodies(old, new) == []
 
 
 def test_new_path_zero_db_calls(monkeypatch):
@@ -425,36 +367,6 @@ def test_rpc_rejects_bad_datasets_shape():
     assert envelope["body"]["detail"]["error"] == "engine_rpc_payload_invalid"
 
 
-def test_detail_missing_quote_404_same(old_path_db):
-    old_path_db.mode = "detail"
-    old_path_db.detail_ds = dict(DETAIL_FIXTURE["datasets"], quote_orders=[])
-    _as_user()
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert old.status_code == 404
-    assert old.json()["detail"]["code"] == "QUOTE_NOT_FOUND"
-    new = _post_detail(_detail_body(
-        datasets=dict(DETAIL_FIXTURE["datasets"], quote_orders=[])))
-    envelope = new.json()
-    assert envelope["status"] == 404
-    assert envelope["body"] == old.json()
-
-
-def test_detail_invisible_quote_404_same(old_path_db):
-    """不可见 = 与不存在同码同体（不泄露存在性）。"""
-    row = dict(DETAIL_FIXTURE["datasets"]["quote_orders"][0],
-               owner_id="999", owner_scope="private", team_id=777)
-    old_path_db.mode = "detail"
-    old_path_db.detail_ds = dict(DETAIL_FIXTURE["datasets"], quote_orders=[])
-    _as_user()
-    old = client.get(DETAIL_FIXTURE["endpoint"]["path"])
-    assert old.status_code == 404
-    new = _post_detail(_detail_body(
-        datasets=dict(DETAIL_FIXTURE["datasets"], quote_orders=[row])))
-    envelope = new.json()
-    assert envelope["status"] == 404
-    assert envelope["body"] == old.json()
-
-
 def test_detail_id_mismatch_400():
     body = _detail_body(quote_id=12)   # datasets 里是 11
     resp = _post_detail(body)
@@ -477,42 +389,7 @@ def test_list_kernel_visibility_defense_in_depth():
     assert ids == [11, 12, 13]
 
 
-@pytest.mark.parametrize("query, expected_status", [
-    ({"status": "bogus"}, 422),
-    ({"page": "abc"}, 422),
-    ({"page": "0"}, 422),
-    ({"page_size": "201"}, 422),
-    ({"page_size": "0"}, 422),
-    ({"customer_id": "abc"}, 422),
-    ({"customer_id": ""}, 422),
-    ({"inquiry_id": "abc"}, 422),
-])
-def test_list_invalid_query_422_same(old_path_db, query, expected_status):
-    old_path_db.mode = "list"
-    _as_user()
-    qs = "&".join("%s=%s" % (k, v) for k, v in query.items())
-    old = client.get("/api/v1/quotes?" + qs)
-    assert old.status_code == expected_status, old.text
-    raw = {k: v for k, v in query.items()}
-    body = _list_body(query={**{"status": None, "customer_id": None, "inquiry_id": None,
-                                "page": None, "page_size": None}, **raw})
-    envelope = _post_list(body).json()
-    assert envelope["status"] == expected_status
-    assert envelope["body"] == old.json()
 
-
-def test_list_multi_bad_query_errors_order_same(old_path_db):
-    """多个非法 query 参数：错误按 handler 声明顺序累计（与 FastAPI 同一顺序）。"""
-    old_path_db.mode = "list"
-    _as_user()
-    qs = "page=0&page_size=201&customer_id=x"
-    old = client.get("/api/v1/quotes?" + qs)
-    assert old.status_code == 422
-    body = _list_body(query={"status": None, "customer_id": "x", "inquiry_id": None,
-                             "page": "0", "page_size": "201"})
-    envelope = _post_list(body).json()
-    assert envelope["status"] == 422
-    assert envelope["body"] == old.json()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -568,14 +445,3 @@ def test_rpc_entry_has_no_db_access(fn_name):
     src = _strip_docstrings(inspect.getsource(getattr(quote_api, fn_name)))
     for forbidden in ("_db.", "_acquire", "asyncpg", "db.fetch"):
         assert forbidden not in src, fn_name + " 不得包含取数代码: " + forbidden
-
-
-def test_old_and_new_paths_share_one_projection():
-    import inspect
-
-    old_list = inspect.getsource(quote_api.list_quote_orders)
-    old_detail = inspect.getsource(quote_api.get_quote_order)
-    new_list = inspect.getsource(quote_api.quote_list_from_datasets)
-    new_detail = inspect.getsource(quote_api.quote_detail_from_datasets)
-    assert "_quote_list_payload" in old_list and "_quote_list_payload" in new_list
-    assert "_quote_detail_payload" in old_detail and "_quote_detail_payload" in new_detail
