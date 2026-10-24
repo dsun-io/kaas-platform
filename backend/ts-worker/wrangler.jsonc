@@ -66,7 +66,10 @@
     // 至此 P0 的 5 条热读全部走门面直连：页面首屏不再依赖 Python 冷启动。
     // 回退：把 AUTH_DB_SPLIT 改成 "off"（或从白名单删条目）再发版；行为即回到全透传。
     "AUTH_DB_SPLIT": "on",
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list"
+    // 2026-10-24 17:30 第三批：放行 engines 首个切片 export-quote.calculate
+    // （金标 fixture 证明旧==新 0 diff；线上用同一请求做「旧路径基线 vs 新路径」逐字节对比后转正）。
+    // 回退：从本白名单删掉该条目（或 AUTH_DB_SPLIT=off）再发版即可。
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate"
   }
   // 无 triggers（门面不跑 cron）
 }
