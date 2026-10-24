@@ -1,5 +1,5 @@
 /**
- * KaaS TS 门面 · workstations 域（35 条路由：17 门面移植 + 18 内核透传）。
+ * KaaS TS 门面 · workstations 域（35 条路由：16 门面移植 + 19 内核透传）。
  *
  * 真源逐条对齐：
  * - backend/worker/src/ws_workstations.py（我的工位 / 个人订阅 / 生效编码判定）
@@ -10,7 +10,7 @@
  * - backend/worker/src/main.py:4833-4911（企业抬头）
  *
  * ── 移植口径（ADR-008 铁纪律）──────────────────────────────────────────────
- * · **门面移植**（17 条）：鉴权 + zod 入参 + SQL 参数化直译 + 出参投影，无业务 if。
+ * · **门面移植**（16 条）：鉴权 + zod 入参 + SQL 参数化直译 + 出参投影，无业务 if。
  *   小型纯函数镜像（normalize_swift / normalize_codes / has_workstation /
  *   is_same_team 之外的判定）均标出 Python 行号，TODO(TODO:TS3) 换 KERNEL 规则端点。
  * · **内核透传**（18 条）：端点依赖**报价引擎**（产品注册表 ProductSpec / spec
@@ -28,7 +28,6 @@ import { z } from "zod";
 import { withDb, type Db } from "../db";
 import { getEnv, type Env } from "../env";
 import {
-  ws_products__TenantProductStatusIn,
   ws_products_WorkstationProductIn,
   ws_workstations_SubscriptionIn,
 } from "../generated/schemas";
@@ -755,38 +754,14 @@ app.get("/api/v1/tenant-product-status", (c) => respond(c, async () => {
 }));
 
 // POST /api/v1/tenant-product-status（ws_products.py:525-556）
+// 2026-10-24：改为**内核透传**。原门面直连 SQL 在 tenant_products 查不到产品就 404，
+// 但系统产品（鹿网/牛栏网/勾花网…）的真源是 Python 代码注册表，生产库里没有
+// is_system=true 行 ⇒ 「在报价中显示」开关对它们恒 404（生产实测）。
+// "产品是否存在"是业务判定（注册表 ∪ 租户行），按 ADR-008 只在内核一处实现，
+// 门面不再维护第二份（此前正是第二份实现漏了注册表）。
 app.post("/api/v1/tenant-product-status", (c) => respond(c, async () => {
-  const user = await requireUser(c);
-  const body = await parseBody(c, ws_products__TenantProductStatusIn);
-  const query = parseQuery(workstationQuery, queries(c));
-  const workstation = query.workstation ?? "quote";
-  const tenantId = tenantOf(user);
-  const payload = await withDb(getEnv(c), async (sql: Db) => {
-    const products = await sql.unsafe(
-      "SELECT product_key, product_name, is_system FROM tenant_products"
-      + " WHERE product_key=$1 AND (tenant_id=$2 OR is_system = true)"
-      + " ORDER BY is_system DESC LIMIT 1", [body.product_key, tenantId]);
-    const product = products[0] as Row | undefined;
-    if (!product) {
-      throw httpError(404, { error: "not_found", code: "PRODUCT_NOT_FOUND" });
-    }
-    const rows = await sql.unsafe(
-      "INSERT INTO tenant_workstation_products"
-      + " (tenant_id, team_id, workstation, product_key, is_enabled)"
-      + " VALUES ($1,$2,$3,$4,$5)"
-      + " ON CONFLICT (tenant_id, (COALESCE(team_id, 0)), workstation, product_key)"
-      + " DO UPDATE SET is_enabled = EXCLUDED.is_enabled, updated_at = now()"
-      + " RETURNING product_key, is_enabled",
-      [tenantId, user.team_id, workstation, body.product_key, body.is_enabled]);
-    const row = rows[0] as Row;
-    return {
-      product_key: row.product_key,
-      product_name: product.product_name,
-      is_system: bool(product.is_system),
-      is_enabled: bool(row.is_enabled),
-    };
-  });
-  return c.json(payload);
+  await requireUser(c);
+  return forwardKernelRequest(c);
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════

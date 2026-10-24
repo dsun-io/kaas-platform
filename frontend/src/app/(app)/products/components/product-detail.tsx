@@ -32,9 +32,14 @@ import {
   useProductProfile,
   useSaveProductProfile,
 } from "@/lib/products/use-products";
+import {
+  applyNameEnInfo,
+  nameEnListFromInfo,
+} from "@/lib/products/product-names";
 
 import { AdvancedSpecSettings } from "./advanced-spec-settings";
 import { BusinessSpecEditor } from "./business-spec-editor";
+import { NameEnEditor } from "./name-en-editor";
 import { ProductImagesSection } from "./product-images";
 
 // 2026-10-23 产品表单收口（方案 OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN §3.1）：
@@ -158,7 +163,9 @@ export function ProductDetail({
     product.tenant?.spec ?? registrySpec.data ?? null;
   const [spec, setSpec] = useState<ProductSpec | null>(null);
   const [name, setName] = useState(product.name);
-  const [nameEn, setNameEn] = useState(product.nameEn);
+  // 英文名多值（主名在前）：第 1 个就是主英文名，报价/单证用它。
+  // 系统产品（无 tenant_products 行）也能改 —— 落点在团队级 product_profiles.info。
+  const [nameEnList, setNameEnList] = useState<string[]>(product.nameEnList);
   // 价格与利润（利润率/综合税费/成本口径）已从产品表单删除（在报价工作台配置），
   // 原 profitPct/taxPct/costBasis 三个 state 一并移除（保存时原样保留 spec 现值）。
   // info 承载资料字段 + material_options（string[]）⇒ 值类型放宽为 unknown。
@@ -186,6 +193,19 @@ export function ProductDetail({
       : [];
     setInfo(base);
   }, [profile.data]);
+
+  // 英文名草稿：团队资料（product_profiles.info）优先；资料还没到/没配时用产品行上
+  // 已经算好的「主名 + 别名」（/products 与 mergeWorkProducts 是同一口径，主名在前）。
+  useEffect(() => {
+    const fromProfile = nameEnListFromInfo(profile.data?.info);
+    const fallback =
+      product.nameEnList && product.nameEnList.length > 0
+        ? product.nameEnList
+        : product.nameEn
+          ? [product.nameEn]
+          : [];
+    setNameEnList(fromProfile.length > 0 ? fromProfile : fallback);
+  }, [product.key, product.nameEn, product.nameEnList, profile.data]);
 
   const materialOptions = Array.isArray(info.material_options)
     ? (info.material_options as unknown as string[])
@@ -219,9 +239,29 @@ export function ProductDetail({
     ? product.tenant?.is_active !== false
     : statusRow?.is_enabled !== false;
 
-  const saveProduct = (activeOverride?: boolean) => {
+  const saving = save.isPending || saveProfile.isPending;
+
+  /** 编辑器里的多英文名 → 送后端的规范形状（主名在前；空行丢掉）。 */
+  const namesToSave = () => {
+    const names = nameEnList.map((n) => n.trim()).filter(Boolean);
+    return { names, primary: names[0] ?? "" };
+  };
+
+  /**
+   * 唯一保存动作（2026-10-24 英文名修复）：
+   *   1. 先 `PUT /products/{key}/profile` —— 团队资料 + **多英文名**。
+   *      系统产品（鹿网/牛栏网/勾花网）没有 tenant_products 行，英文名只可能落在这里，
+   *      以前只保存 profile 的 usage/origin/material_options ⇒ 英文名改完静默丢失。
+   *   2. 有租户行时再 `PUT /tenant-products/{id}` —— 中文名 / 主英文名 / 规格；
+   *      `product_name_en` 与 profile 的主名保持一致（既有读侧字段也跟上）。
+   */
+  const saveAll = async (activeOverride?: boolean) => {
     if (!spec) return;
-    if (!name.trim()) return toast.error("产品名称不能为空");
+    if (!name.trim()) {
+      toast.error("产品名称不能为空");
+      return;
+    }
+    const { names, primary } = namesToSave();
     // 2026-10-23：价格与利润（利润率/综合税费/成本口径）从产品表单删除——
     // 在报价工作台整单参数里配置（OPTIMIZATION_PLAN §3.1）。这里**原样保留**现有值
     // 作为引擎兜底默认，不再由用户在产品页改，也不再校验。
@@ -229,50 +269,56 @@ export function ProductDetail({
       ...spec,
       key: product.key,
       name: name.trim(),
-      name_en: nameEn.trim(),
+      name_en: primary,
     };
-    save.mutate(
-      {
-        id: product.tenant?.id,
-        body: {
-          product_key: product.key,
-          product_name: name.trim(),
-          product_name_en: nameEn.trim() || null,
-          category_code: product.categoryCode || null,
-          cost_field: product.tenant?.cost_field || "raw_price",
-          cost_basis: spec.cost_basis || "pretax",
-          cost_unit: product.tenant?.cost_unit || spec.cost_unit || null,
-          profit_mode: "margin_on_price",
-          profit_value: spec.profit_value ?? 0.06,
-          misc_fee_rate: spec.misc_fee_rate ?? 0.03,
-          spec: nextSpec,
-          is_active: activeOverride ?? (quoteEnabled && rulesReady),
-        },
-      },
-      {
-        onSuccess: () => {
-          toast.success("产品已保存");
-          onChanged();
-        },
-        onError: () => toast.error("保存失败：请检查名称与规格参数后重试"),
-      },
-    );
+    try {
+      await saveProfile.mutateAsync(applyNameEnInfo(info, names, primary));
+      if (product.tenant?.id) {
+        await save.mutateAsync({
+          id: product.tenant.id,
+          body: {
+            product_key: product.key,
+            product_name: name.trim(),
+            product_name_en: primary || null,
+            category_code: product.categoryCode || null,
+            cost_field: product.tenant.cost_field || "raw_price",
+            cost_basis: spec.cost_basis || "pretax",
+            cost_unit: product.tenant.cost_unit || spec.cost_unit || null,
+            profit_mode: "margin_on_price",
+            profit_value: spec.profit_value ?? 0.06,
+            misc_fee_rate: spec.misc_fee_rate ?? 0.03,
+            spec: nextSpec,
+            is_active: activeOverride ?? (quoteEnabled && rulesReady),
+          },
+        });
+      }
+      toast.success("已保存");
+      onChanged();
+    } catch {
+      toast.error("保存失败：请检查产品名称与规格参数后重试");
+    }
   };
 
-  const makeCustom = () => {
+  /**
+   * 「按我们的规格自定义」：复制一份团队产品定义（同 key），**不再是改英文名的前提**。
+   * 复制前先把英文名保存到团队资料，否则刚输入的别名会丢（复制动作会立刻刷新数据）。
+   */
+  const makeCustom = async () => {
     if (!spec) return;
+    const { names, primary } = namesToSave();
     const nextSpec: ProductSpec = {
       ...cloneSpec(spec),
       key: product.key,
       name: name.trim(),
-      name_en: nameEn.trim(),
+      name_en: primary,
     };
-    save.mutate(
-      {
+    try {
+      await saveProfile.mutateAsync(applyNameEnInfo(info, names, primary));
+      await save.mutateAsync({
         body: {
           product_key: product.key,
           product_name: name.trim(),
-          product_name_en: nameEn.trim() || null,
+          product_name_en: primary || null,
           category_code: product.categoryCode || null,
           cost_field: "raw_price",
           cost_basis: spec.cost_basis || "pretax",
@@ -283,15 +329,12 @@ export function ProductDetail({
           spec: nextSpec,
           is_active: rulesReady,
         },
-      },
-      {
-        onSuccess: () => {
-          toast.success("已复制为我们的自定义产品，可以修改了");
-          onChanged();
-        },
-        onError: () => toast.error("复制失败，请重试"),
-      },
-    );
+      });
+      toast.success("已复制为我们的自定义产品，可以修改了");
+      onChanged();
+    } catch {
+      toast.error("复制失败，请重试");
+    }
   };
 
   const applyCopiedRules = () => {
@@ -317,7 +360,7 @@ export function ProductDetail({
       );
       return;
     }
-    saveProduct(!quoteEnabled);
+    void saveAll(!quoteEnabled);
   };
 
   const otherProducts = useMemo(
@@ -356,26 +399,30 @@ export function ProductDetail({
             />
             在报价中显示
           </label>
+          {/* 「保存」对**所有产品**可用（系统产品保存的是团队资料：英文名/用途/产地…）。
+              2026-10-24 前系统产品这里只有「按我们的规格自定义」，英文名根本没有保存入口。 */}
+          <Button onClick={() => void saveAll()} disabled={saving}>
+            <Save className="mr-1 h-4 w-4" />
+            {saving ? "保存中…" : "保存"}
+          </Button>
           {isTenant ? (
-            <>
-              <Button onClick={() => saveProduct()} disabled={save.isPending}>
-                <Save className="mr-1 h-4 w-4" />
-                {save.isPending ? "保存中…" : "保存"}
-              </Button>
-              <Button
-                variant="outline"
-                className="text-destructive"
-                onClick={() => {
-                  setDeleteError(null);
-                  setConfirmDelete(true);
-                }}
-              >
-                <Trash2 className="mr-1 h-4 w-4" />
-                删除
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              className="text-destructive"
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmDelete(true);
+              }}
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              删除
+            </Button>
           ) : (
-            <Button onClick={makeCustom} disabled={save.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => void makeCustom()}
+              disabled={saving}
+            >
               按我们的规格自定义
             </Button>
           )}
@@ -440,21 +487,18 @@ export function ProductDetail({
           <div>
             <h3 className="text-sm font-semibold">基本信息</h3>
             <p className="text-xs text-muted-foreground">
-              图片、名称和资料按团队保存；名称/英文名修改后点右上角「保存」生效。
+              {isTenant
+                ? "名称、英文名和资料按团队保存；改完点这里保存（英文名与规格会一并保存）。"
+                : "平台内置产品：英文名和资料按团队保存，改完点这里保存；规格需要调整时再「按我们的规格自定义」。"}
             </p>
           </div>
           <Button
             size="sm"
             variant="outline"
-            disabled={saveProfile.isPending}
-            onClick={() =>
-              saveProfile.mutate(info, {
-                onSuccess: () => toast.success("基本信息已保存"),
-                onError: () => toast.error("保存失败"),
-              })
-            }
+            disabled={saving}
+            onClick={() => void saveAll()}
           >
-            {saveProfile.isPending ? "保存中…" : "保存基本信息"}
+            {saving ? "保存中…" : isTenant ? "保存产品信息" : "保存基本信息"}
           </Button>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -466,15 +510,14 @@ export function ProductDetail({
               onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">英文名</span>
-            <Input
-              value={nameEn}
-              disabled={!isTenant}
-              placeholder="报价/单证上的英文产品名"
-              onChange={(e) => setNameEn(e.target.value)}
+          {/* 英文名多值：第 1 条是主英文名；系统产品同样可编辑（团队级资料，不是规格） */}
+          <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+            <NameEnEditor
+              names={nameEnList}
+              onChange={setNameEnList}
+              disabled={saving}
             />
-          </label>
+          </div>
           {PROFILE_FIELDS.map(([key, label, placeholder]) => (
             <label key={key} className="space-y-1">
               <span className="text-sm font-medium">{label}</span>
@@ -542,11 +585,7 @@ export function ProductDetail({
         </p>
         {isTenant ? (
           <div className="mt-3">
-            <Button
-              size="sm"
-              onClick={() => saveProduct()}
-              disabled={save.isPending}
-            >
+            <Button size="sm" onClick={() => void saveAll()} disabled={saving}>
               <Save className="mr-1 h-3.5 w-3.5" />
               保存规格与包装
             </Button>

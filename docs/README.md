@@ -31,6 +31,7 @@
 | 4b | [IMPORT_ORDERS_PLAN_2026-10-23.md](./IMPORT_ORDERS_PLAN_2026-10-23.md) | **C29 历史订单批量导入**设计+执行方案：口径裁决 / CSV 列 / API 契约 / 分层落点 / DoD |
 | 4c | [OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md](./OPTIMIZATION_PLAN_2026-10-23_PRODUCT_QUOTE_REDESIGN.md) | **产品×报价重构**（2026-10-23 用户反馈 14 条）：逐条定位（文件/行）/ 三处口径裁决 / 目标设计（产品表单收口、报价行三段布局、成本含税开关契约、税务档案侧边栏、批量导入整单化）/ 批次 A→D 与 DoD；状态挂 `TODO.md` §R |
 | 4d | [HANDOVER_2026-10-23_PRODUCT_QUOTE_REDESIGN.md](./HANDOVER_2026-10-23_PRODUCT_QUOTE_REDESIGN.md) | **终版交接（2026-10-24）**：R-A/B/C1/C2/D 五批全部完成 / 门禁实测 / **遗留批已收口**（deer_net 列定义 / 单证材质并入 Specification / 旧单产品导入 3 端点下线）/ **新设备恢复步骤** / 关键口径备忘（材质不算价、表面处理=变体真源、导入=单表+产品列、成本口径逐行可选） |
+| 4e | [HANDOVER_2026-10-24_LIVE_FEEDBACK.md](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md) | **线上反馈六项（2026-10-24）**：产品英文名可保存/系统产品可改/**多英文名（主名+地区别名）**；鹿网·牛栏网「在报价中显示」404 根因与修复（门面转内核 + 注册表回落 + 乐观更新）；客户「询盘/订单」计数含订单；单证页开单一等公民 + 样板预览收编 + 开单前成品预览。含门禁数字与遗留边界 |
 | 5 | [archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md](./archive/2026-10-21-cutover/UI_UX_OPTIMIZATION_2026-10-20.md) | UI 方案与终验：P0/P1/P2 已完成，§11 为终验结论（历史「未做」已逐处标注完成状态） |
 | 6 | [archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md](./archive/2026-10-21-final-closeout/UI_BACKEND_DEPENDENCIES_2026-10-20.md)（历史留档） | 后端 5 项**历史验收基线**（2026-10-20 全部完成并入 `main`）；**现行口径看根 README + HANDOVER §0.1**，不要据此判断现状 |
 

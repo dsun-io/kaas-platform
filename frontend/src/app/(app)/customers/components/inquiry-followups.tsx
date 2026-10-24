@@ -41,6 +41,7 @@ import {
 import type {
   CustomerRecordsDirect,
   RecordDocument,
+  RecordOrder,
   RecordQuote,
 } from "@/lib/customer/customer-records";
 
@@ -670,6 +671,41 @@ export function InquiryStageHistory({ inquiryId }: { inquiryId: number }) {
   );
 }
 
+/** 订单行（直接归属客户的订单 / 未关联询盘报价单下的订单共用同一套字段展示）。 */
+function OrderRow({ order }: { order: RecordOrder }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-white/60 px-3 py-2 text-xs">
+      <span className="text-muted-foreground">订单</span>
+      <span className="font-mono">{order.order_no}</span>
+      <StatusBadge
+        tone={ORDER_STATUS_TONE[order.status ?? ""] ?? "default"}
+        className="h-5 px-2 text-[11px]"
+      >
+        {ORDER_STATUS_LABEL[order.status ?? ""] ?? order.status ?? "—"}
+      </StatusBadge>
+      {/* 后端 records 接口尚未返回 source_type 时不贴来源徽标：
+          「查不到」不能画成「确定是直接下单」。 */}
+      {order.source_type ? (
+        <StatusBadge
+          tone={order.source_type === "inquiry" ? "info" : "default"}
+          className="h-5 px-2 text-[11px]"
+        >
+          {order.source_type === "inquiry" ? "询盘转化" : "直接下单"}
+        </StatusBadge>
+      ) : null}
+      {order.source_channel && (
+        <StatusBadge tone="default" className="h-5 px-2 text-[11px]">
+          {channelLabel(order.source_channel)}
+        </StatusBadge>
+      )}
+      <span className="ml-auto tabular-nums text-muted-foreground">
+        {money(order.total_amount, order.currency)} ·{" "}
+        {formatDate(order.created_at)}
+      </span>
+    </div>
+  );
+}
+
 /**
  * 直接下单 / 未关联询盘的单据（设计 §9.4）。
  *
@@ -693,7 +729,14 @@ export function UnlinkedRecords({
 }) {
   const orders = [...direct.orders].sort(byDateDesc);
   const docs = [...direct.documents].sort(byDateDesc);
-  const total = quotes.length + orders.length + docs.length;
+  // 未关联询盘的报价单自己也可能已经产生订单（quote.orders）：之前这几笔
+  // 只被计入询盘 tab 计数、界面上却没有任何入口（假修）。现在挂在报价行下面
+  // 单独列出，保证「计数里的订单」都能看到。
+  const quoteOrderCount = quotes.reduce(
+    (sum, quote) => sum + quote.orders.length,
+    0,
+  );
+  const total = quotes.length + orders.length + quoteOrderCount + docs.length;
   if (!loading && !unavailable && total === 0) return null;
 
   return (
@@ -708,12 +751,12 @@ export function UnlinkedRecords({
             ? "读取中…"
             : unavailable
               ? "暂时读不到"
-              : `${quotes.length} 张报价单 · ${orders.length} 个订单 · ${docs.length} 份单证`}
+              : `${quotes.length} 张报价单 · ${orders.length + quoteOrderCount} 个订单 · ${docs.length} 份单证`}
         </span>
       </summary>
       <p className="mt-2 text-[11px] text-muted-foreground">
         直接下单是正常业务路径（线下电话单 / 老客户返单 / 展会现场单）；
-        未关联询盘的报价与历史导入单据也归在这里，都是正常分类。
+        未关联询盘的报价（含它已产生的订单）与历史导入单据也归在这里，都是正常分类。
       </p>
       <div className="mt-3 space-y-2">
         {loading ? (
@@ -737,59 +780,36 @@ export function UnlinkedRecords({
             {quotes.map((quote) => (
               <div
                 key={`q-${quote.id ?? quote.quote_no}`}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-white/60 px-3 py-2 text-xs"
+                className="space-y-2"
               >
-                <span className="text-muted-foreground">报价单</span>
-                <span className="font-mono">{quote.quote_no}</span>
-                <StatusBadge
-                  tone={QUOTE_STATUS_TONE[quote.status ?? ""] ?? "default"}
-                  className="h-5 px-2 text-[11px]"
-                >
-                  {QUOTE_STATUS_LABEL[quote.status ?? ""] ??
-                    quote.status ??
-                    "—"}
-                </StatusBadge>
-                <span className="ml-auto tabular-nums text-muted-foreground">
-                  {money(quote.total_amount, quote.currency)} ·{" "}
-                  {formatDate(quote.created_at)}
-                </span>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-white/60 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">报价单</span>
+                  <span className="font-mono">{quote.quote_no}</span>
+                  <StatusBadge
+                    tone={QUOTE_STATUS_TONE[quote.status ?? ""] ?? "default"}
+                    className="h-5 px-2 text-[11px]"
+                  >
+                    {QUOTE_STATUS_LABEL[quote.status ?? ""] ??
+                      quote.status ??
+                      "—"}
+                  </StatusBadge>
+                  <span className="ml-auto tabular-nums text-muted-foreground">
+                    {money(quote.total_amount, quote.currency)} ·{" "}
+                    {formatDate(quote.created_at)}
+                  </span>
+                </div>
+                {[...quote.orders].sort(byDateDesc).map((order) => (
+                  <div
+                    key={`qo-${quote.id ?? quote.quote_no}-${order.id ?? order.order_no}`}
+                    className="pl-4"
+                  >
+                    <OrderRow order={order} />
+                  </div>
+                ))}
               </div>
             ))}
             {orders.map((order) => (
-              <div
-                key={`o-${order.id ?? order.order_no}`}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-white/60 px-3 py-2 text-xs"
-              >
-                <span className="text-muted-foreground">订单</span>
-                <span className="font-mono">{order.order_no}</span>
-                <StatusBadge
-                  tone={ORDER_STATUS_TONE[order.status ?? ""] ?? "default"}
-                  className="h-5 px-2 text-[11px]"
-                >
-                  {ORDER_STATUS_LABEL[order.status ?? ""] ??
-                    order.status ??
-                    "—"}
-                </StatusBadge>
-                {/* 后端 records 接口尚未返回 source_type 时不贴来源徽标：
-                    「查不到」不能画成「确定是直接下单」。 */}
-                {order.source_type ? (
-                  <StatusBadge
-                    tone={order.source_type === "inquiry" ? "info" : "default"}
-                    className="h-5 px-2 text-[11px]"
-                  >
-                    {order.source_type === "inquiry" ? "询盘转化" : "直接下单"}
-                  </StatusBadge>
-                ) : null}
-                {order.source_channel && (
-                  <StatusBadge tone="default" className="h-5 px-2 text-[11px]">
-                    {channelLabel(order.source_channel)}
-                  </StatusBadge>
-                )}
-                <span className="ml-auto tabular-nums text-muted-foreground">
-                  {money(order.total_amount, order.currency)} ·{" "}
-                  {formatDate(order.created_at)}
-                </span>
-              </div>
+              <OrderRow key={`o-${order.id ?? order.order_no}`} order={order} />
             ))}
             {docs.length > 0 && <DocTable docs={docs} />}
           </>

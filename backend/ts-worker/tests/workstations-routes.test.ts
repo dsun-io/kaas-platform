@@ -294,3 +294,40 @@ describe("企业抬头（main.py:4833-4911）", () => {
     ).toBe(false);
   });
 });
+
+describe("POST /api/v1/tenant-product-status（系统产品 404 修复，2026-10-24）", () => {
+  it("门面不再自行查库/改写：注册表系统产品（DB 无 is_system 行）走内核透传 200", async () => {
+    const user = userRow();
+    resetDb((query) => (query.includes("FROM users WHERE id") ? [user] : []));
+
+    const res = await request(
+      "/api/v1/tenant-product-status?workstation=quote",
+      user,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ product_key: "field_fence", is_enabled: false }),
+      },
+    );
+
+    // 门面响应形状由内核契约决定（测试 KERNEL 桩返回 200 {}）
+    expect(res.status).toBe(200);
+    // 旧实现会在门面查 tenant_products 并直接 404 —— 修复后门面不碰这两张表
+    expect(
+      dbState.calls.some((call) => call.query.includes("tenant_products")),
+    ).toBe(false);
+    expect(
+      dbState.calls.some((call) => call.query.includes("tenant_workstation_products")),
+    ).toBe(false);
+  });
+
+  it("无 token → 401（鉴权仍在门面，防御纵深不下沉）", async () => {
+    resetDb(() => []);
+    const res = await request("/api/v1/tenant-product-status", null, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ product_key: "field_fence", is_enabled: false }),
+    });
+    expect(res.status).toBe(401);
+  });
+});

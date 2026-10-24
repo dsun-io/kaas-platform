@@ -21,6 +21,12 @@ import {
   SUBSCRIBABLE_WORKSTATIONS,
 } from "@/lib/workstation/visibility";
 import { API_TOKEN_SCOPES } from "@/lib/api-tokens/scopes";
+import {
+  applyNameEnInfo,
+  nameEnListFromInfo,
+  normalizedInfo,
+  primaryNameEnFromInfo,
+} from "@/lib/products/product-names";
 import tradeDocSample from "@/lib/trade-doc/sample-data.json";
 import type { ClauseTemplate } from "@/lib/trade-doc/clause-templates";
 // 收款容差公式与枚举取**唯一真源**（`receipt_rules.py` 的前端镜像，见文件头），
@@ -4598,7 +4604,11 @@ export const handlers = [
       : null;
     return HttpResponse.json({
       customer: { id: customer?.id ?? null, name: customerName, team_id: 1 },
-      counts: { quotes: 2, orders: 2, documents: 6 },
+      // counts.orders 必须与树里的订单节点数一致（1 个询盘报价下的订单 +
+      // 1 个直接归属客户的订单 + 1 个未关联询盘报价下的订单 = 3；
+      // 见下方 QUO-202609-0004.orders / QUO-202609-0003.orders / direct.orders）。
+      // 客户详情「询盘/订单」tab 的计数读的就是这里 + 询盘数。
+      counts: { quotes: 2, orders: 3, documents: 6 },
       quotes: [
         {
           id: 4,
@@ -4673,7 +4683,23 @@ export const handlers = [
               created_at: "2026-09-26T10:00:00Z",
             },
           ],
-          orders: [],
+          // 未关联询盘的报价单也已经产生了订单：客户详情必须在
+          // 「直接下单（正常分类）」区块里把这笔订单列出来（问题 5 的可见性），
+          // 否则 tab 计数把它算进去了、界面上却找不到。
+          orders: [
+            {
+              id: 10,
+              order_no: "ORD-202609-0010",
+              status: "producing",
+              currency: "USD",
+              total_amount: 8000,
+              created_at: "2026-09-26T12:00:00Z",
+              source_type: "direct",
+              source_channel: "expo",
+              inquiry_id: null,
+              documents: [],
+            },
+          ],
         },
       ],
       direct: {
@@ -7969,9 +7995,17 @@ export const handlers = [
   //
   // 形状与数值全部来自后端真源（见 `./export-quote-data.ts` 头部说明），不是手编。
   http.get("/api/v1/export-quote/products", () => {
+    // 主英文名覆盖（与内核 `_quotable_specs` 同口径）：报价行
+    // `product_name = name_en || name`，不覆盖的话团队改的英文名到不了报价/单证。
+    const products = MOCK_EXPORT_PRODUCTS.map((p) => {
+      const primary = primaryNameEnFromInfo(
+        productProfilesStore.get(p.key) ?? {},
+      );
+      return primary && primary !== p.name_en ? { ...p, name_en: primary } : p;
+    });
     return HttpResponse.json({
-      products: MOCK_EXPORT_PRODUCTS,
-      total: MOCK_EXPORT_PRODUCTS.length,
+      products,
+      total: products.length,
     });
   }),
 
@@ -8474,22 +8508,31 @@ export const handlers = [
 
   // ── 产品（注册表产品 + 租户可编辑的基础信息/图片）────────────────────────
   // GET ← lib/products/use-products.ts:61；形状 = ws_files.py:394-405
+  // 英文名口径（2026-10-24 与内核同源）：团队资料里的主英文名优先于代码注册表，
+  // 同时回 name_en_aliases（地区别名）与 name_en_list（主名在前，编辑框回填用）。
   http.get("/api/v1/products", () => {
     return HttpResponse.json({
-      items: MOCK_EXPORT_PRODUCTS.map((p) => ({
-        product_key: p.key,
-        name: p.name || p.key,
-        name_en: p.name_en,
-        category_code: p.category_code,
-        media_count: fileObjectsStore.filter(
-          (f) =>
-            f.owner_type === "product" &&
-            f.owner_id === p.key &&
-            f.kind === "product_photo" &&
-            f.is_current,
-        ).length,
-        profile: productProfilesStore.get(p.key) ?? {},
-      })),
+      items: MOCK_EXPORT_PRODUCTS.map((p) => {
+        const info = productProfilesStore.get(p.key) ?? {};
+        const names = nameEnListFromInfo(info);
+        const list = names.length > 0 ? names : p.name_en ? [p.name_en] : [];
+        return {
+          product_key: p.key,
+          name: p.name || p.key,
+          name_en: list[0] ?? p.name_en,
+          name_en_aliases: list.slice(1),
+          name_en_list: list,
+          category_code: p.category_code,
+          media_count: fileObjectsStore.filter(
+            (f) =>
+              f.owner_type === "product" &&
+              f.owner_id === p.key &&
+              f.kind === "product_photo" &&
+              f.is_current,
+          ).length,
+          profile: info,
+        };
+      }),
       media_kinds: MEDIA_KIND_LABELS,
     });
   }),
@@ -8499,7 +8542,8 @@ export const handlers = [
     const productKey = String(params.productKey);
     return HttpResponse.json({
       product_key: productKey,
-      info: productProfilesStore.get(productKey) ?? {},
+      // 与内核 `normalized_info` 同口径：有英文名才补出规范形状，没配则一个键都不加
+      info: normalizedInfo(productProfilesStore.get(productKey) ?? {}),
       updated_at: null,
     });
   }),
@@ -8524,10 +8568,19 @@ export const handlers = [
           { status: 422 },
         );
       }
-      productProfilesStore.set(productKey, info as Record<string, unknown>);
+      // 与内核 `put_profile` 同口径：写侧归一化多英文名（主名在前），
+      // 并把主名同步到租户产品行（`tenant_products.product_name_en`，既有读侧字段）。
+      const normalized = applyNameEnInfo(info);
+      productProfilesStore.set(productKey, normalized);
+      const primary = primaryNameEnFromInfo(normalized);
+      if (primary) {
+        for (const row of tenantProductsStore) {
+          if (row.product_key === productKey) row.product_name_en = primary;
+        }
+      }
       return HttpResponse.json({
         product_key: productKey,
-        info: productProfilesStore.get(productKey),
+        info: normalized,
         updated_at: nowIso(),
       });
     },

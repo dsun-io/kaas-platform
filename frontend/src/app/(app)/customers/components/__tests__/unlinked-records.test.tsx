@@ -11,7 +11,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { UnlinkedRecords } from "../inquiry-followups";
-import type { CustomerRecordsDirect } from "@/lib/customer/customer-records";
+import type {
+  CustomerRecordsDirect,
+  RecordOrder,
+  RecordQuote,
+} from "@/lib/customer/customer-records";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -57,6 +61,35 @@ function direct(
     ],
     documents: [],
     ...overrides,
+  };
+}
+
+function order(overrides: Partial<RecordOrder> = {}): RecordOrder {
+  return {
+    id: 10,
+    order_no: "ORD-10",
+    status: "producing",
+    currency: "USD",
+    total_amount: 8000,
+    created_at: "2026-09-26T12:00:00Z",
+    source_type: "direct",
+    source_channel: "expo",
+    documents: [],
+    ...overrides,
+  };
+}
+
+function unlinkedQuote(orders: RecordOrder[]): RecordQuote {
+  return {
+    id: 11,
+    quote_no: "QUO-11",
+    status: "draft",
+    currency: "USD",
+    total_amount: 8000,
+    created_at: "2026-09-26T10:00:00Z",
+    inquiry_id: null,
+    documents: [],
+    orders,
   };
 }
 
@@ -108,6 +141,23 @@ describe("UnlinkedRecords（直接下单分类）", () => {
     )[0]!;
     expect(row2.textContent).toContain("直接下单");
     expect(row2.textContent).not.toContain("其他");
+  });
+
+  it("未关联询盘的报价单下的订单单独列出（计数含订单后必须能看到）", () => {
+    mount(
+      <UnlinkedRecords
+        quotes={[unlinkedQuote([order()])]}
+        direct={{ orders: [], documents: [] }}
+        loading={false}
+        unavailable={false}
+      />,
+    );
+    const text = container!.textContent ?? "";
+    // 报价行 + 它已产生的订单行都在（此前订单只进了 tab 计数、界面无入口）
+    expect(text).toContain("QUO-11");
+    expect(text).toContain("ORD-10");
+    // 汇总的订单数包含报价单下的订单，不能只数 direct.orders
+    expect(text).toContain("1 个订单");
   });
 
   it("没有任何单据时不渲染整块（空态由上层页面处理）", () => {

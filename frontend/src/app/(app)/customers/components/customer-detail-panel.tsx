@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 客户详情面板（Dialog + 信息/询盘/历史三个 tab）。
+ * 客户详情面板（Dialog + 信息/询盘·订单/历史三个 tab）。
  *
  * 从 page.tsx 抽出（U-P1D2），行为/DOM/aria 不变：
  * · 数据：useCustomerDetail + useCustomerRecords（往来记录）；
@@ -35,6 +35,7 @@ import apiClient from "@/lib/api/client";
 import { useCustomerRecords } from "@/lib/customer/use-customer-records";
 import {
   EMPTY_CUSTOMER_RECORDS,
+  type CustomerRecords,
   type RecordQuote,
 } from "@/lib/customer/customer-records";
 
@@ -57,6 +58,30 @@ import { displayInquiryItems, inquiryProductSummary } from "./inquiry-items";
 import { resolveInquiryStage } from "./inquiry-stage";
 
 type DetailTab = "info" | "inquiries" | "history";
+
+/**
+ * 详情页「询盘/订单」tab 的订单计数（问题 5：订单也要算进 tab 计数）。
+ *
+ * 口径：records 树里的**订单节点** —— 报价单下的订单 + 直接归属客户的订单，每条算 1。
+ * 后端 `build_records` 保证一个订单只落一个节点（`quote_id` 能命中报价就挂报价，
+ * 否则进 `direct`），这里再按订单 id 去重，避免异常数据把同一订单算两次。
+ *
+ * 计数值必须能在 tab 内容里找到对应条目：报价单下的订单在对应询盘的
+ * 「报价单 → 订单 → 单证」进度里；没有询盘来源的订单在下方
+ * 「直接下单（正常分类）」区块单独列出（见 UnlinkedRecords）。
+ */
+function countCustomerOrders(records: CustomerRecords): number {
+  const seen = new Set<number>();
+  let anonymous = 0;
+  for (const order of [
+    ...records.quotes.flatMap((quote) => quote.orders),
+    ...records.direct.orders,
+  ]) {
+    if (order.id === null) anonymous += 1;
+    else seen.add(order.id);
+  }
+  return seen.size + anonymous;
+}
 
 function CustomerDetailPanel({
   customer,
@@ -98,6 +123,13 @@ function CustomerDetailPanel({
   const recordsLoading = recordsQuery.isLoading;
   const recordsUnavailable =
     recordsQuery.isError || (recordsResult !== undefined && !recordsResult.ok);
+  // 计数的订单来源：records 树（后端 `counts`/树是同一批行，这里用树计数，
+  // 保证「算进 tab 的每个订单」在 tab 内容里都能找到；接口失败/加载中时未知，
+  // 不显示一个假的 0）。
+  const orderCount =
+    recordsResult?.ok === true ? countCustomerOrders(records) : null;
+  const inquiries = detail?.inquiries ?? [];
+  const inquiryIds = new Set(inquiries.map((inq) => inq.id));
   const quotesByInquiry = new Map<number, RecordQuote[]>();
   for (const quote of records.quotes) {
     if (quote.inquiry_id == null) continue;
@@ -105,8 +137,10 @@ function CustomerDetailPanel({
     list.push(quote);
     quotesByInquiry.set(quote.inquiry_id, list);
   }
+  // 没有询盘来源的报价：inquiry_id 为空，或指向的询盘已不在详情里（历史/已删）。
+  // 后者若留在 quotesByInquiry 里会变成"订单被计数但没有入口"，所以一并归到这里。
   const unlinkedQuotes = records.quotes.filter(
-    (quote) => quote.inquiry_id == null,
+    (quote) => quote.inquiry_id == null || !inquiryIds.has(quote.inquiry_id),
   );
   // 抽屉数据：选中询盘 + 它自己的后续单据 + 阶段（后端真值优先，推导兜底）
   const inquiryDetail =
@@ -192,9 +226,15 @@ function CustomerDetailPanel({
     }
   };
 
+  // 问题 5：询盘 tab 的计数要把订单算进去（询盘数 + 订单数）。
+  // 订单数在 records 接口回来之前是未知的（不能拿 0 冒充），此时显示 "N+"。
+  const inquiriesTabCount =
+    orderCount === null
+      ? `${inquiries.length}+`
+      : String(inquiries.length + orderCount);
   const tabs: { key: DetailTab; label: string }[] = [
     { key: "info", label: "信息" },
-    { key: "inquiries", label: `询盘 (${detail?.inquiries?.length ?? 0})` },
+    { key: "inquiries", label: `询盘/订单 (${inquiriesTabCount})` },
     { key: "history", label: "历史" },
   ];
 
@@ -467,10 +507,16 @@ function CustomerDetailPanel({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium">
-                        {detail?.inquiries?.length ?? 0} 条询盘
+                        {inquiries.length} 条询盘
+                        {orderCount !== null
+                          ? ` · ${orderCount} 个订单`
+                          : recordsLoading
+                            ? " · 订单读取中…"
+                            : " · 订单暂时读不到"}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        每条询盘下按「报价单 → 订单 → 单证」展示后续进度
+                        每条询盘下按「报价单 → 订单 → 单证」展示后续进度；
+                        没有询盘来源的订单列在下方。
                       </p>
                     </div>
                     <Button size="sm" onClick={() => setShowInquiryForm(true)}>
@@ -487,7 +533,9 @@ function CustomerDetailPanel({
                   )}
 
                   <div className="space-y-3">
-                    {detail?.inquiries?.length === 0 && (
+                    {/* 纯订单客户（0 询盘）不能显示"暂无询盘"：订单就在下方区块，
+                        显示空态会把已计数的订单说成没有。只有询盘、订单都为 0 才空。 */}
+                    {inquiries.length === 0 && orderCount === 0 && (
                       <EmptyState
                         title="暂无询盘"
                         description="询盘是报价与单据的起点：先添加询盘，再生成报价单。"
@@ -503,7 +551,7 @@ function CustomerDetailPanel({
                       />
                     )}
 
-                    {detail?.inquiries?.map((inq) => {
+                    {inquiries.map((inq) => {
                       const linkedQuotes = quotesByInquiry.get(inq.id) ?? [];
                       // 阶段口径：后端 F4 真值（inq.stage）优先，推导仅作兜底
                       // （历史行没有 stage / 关闭后重开的陈旧 stage）。
@@ -550,6 +598,14 @@ function CustomerDetailPanel({
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {inquiryProductSummary(productViews)}
                               </p>
+                              {/* 最新一步（报价单 / 订单 / 单证编号 + 状态）：
+                                  「询盘/订单」计数把订单算进去后，订单必须能在询盘卡片上
+                                  对得上号（否则只能进抽屉看，属于假修）。 */}
+                              {stage.hint && (
+                                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                  {stage.hint}
+                                </p>
+                              )}
                             </div>
                             <div
                               className="flex items-center gap-1"

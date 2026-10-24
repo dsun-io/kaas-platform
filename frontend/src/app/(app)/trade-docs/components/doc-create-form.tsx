@@ -30,6 +30,7 @@ import {
 } from "@/components/customer-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { buildCreatePreviewData } from "@/lib/trade-doc/create-preview";
 import { getAvailableTemplates } from "@/lib/trade-doc/render";
 import {
   toCustomerIdPayload,
@@ -39,6 +40,7 @@ import {
 
 import { useCreateTradeDoc } from "../hooks/use-trade-docs";
 import { DOC_TYPE_GROUPS, THIRD_PARTY_TYPES } from "../lib/doc-type-groups";
+import { DocCreatePreview } from "./doc-create-preview";
 
 /** 父对象类型：`none` = 直接挂客户（手动新建 / 导入历史单据的正规路径）。 */
 type SourceKind = "none" | "order" | "quote" | "inquiry";
@@ -63,6 +65,58 @@ export function DocCreateForm({
   const quotes = useQuoteOptions();
 
   const create = useCreateTradeDoc();
+
+  /**
+   * 「成品预览」的可用性 = 开单必填是否齐全（与 submit() 的校验同一口径；
+   * 差别只在这里不弹 toast，而是把入口禁用并把缺项列出来）。
+   */
+  const previewBlockers = useMemo(() => {
+    const missing: string[] = [];
+    if (docTypes.length === 0) missing.push("单证类型");
+    if (!customer) missing.push("业务客户");
+    if (sourceKind === "order" && !sourceId) missing.push("来源订单");
+    if (sourceKind === "quote" && !sourceId) missing.push("来源报价单");
+    if (sourceKind === "inquiry" && !sourceId.trim()) missing.push("询盘编号");
+    return missing;
+  }, [docTypes, customer, sourceKind, sourceId]);
+  const previewBlocked = previewBlockers.length > 0;
+
+  // 多选类型时预览第一张（开单后其余类型可在台账里逐张预览）
+  const previewType = docTypes[0] ?? "";
+  const previewDocLabel = useMemo(
+    () =>
+      templates.find((t) => t.doc_type === previewType)?.name_zh ?? previewType,
+    [templates, previewType],
+  );
+
+  /**
+   * 成品预览数据：样板底稿 + 当前表单已填值（客户/币种/上游贸易条款）。
+   * **纯前端本地装配、不发任何请求、不写库**（边界见 lib/trade-doc/create-preview.ts）。
+   */
+  const preview = useMemo(() => {
+    if (previewBlocked || !previewType) return null;
+    const upstream =
+      sourceKind === "order"
+        ? (orders.data?.find((o) => String(o.id) === sourceId) ?? null)
+        : sourceKind === "quote"
+          ? (quotes.data?.find((q) => String(q.id) === sourceId) ?? null)
+          : null;
+    return buildCreatePreviewData({
+      docType: previewType,
+      currency,
+      customerName: customer?.name ?? null,
+      upstream,
+    });
+  }, [
+    previewBlocked,
+    previewType,
+    sourceKind,
+    sourceId,
+    orders.data,
+    quotes.data,
+    currency,
+    customer,
+  ]);
 
   const toggleType = (value: string) =>
     setDocTypes((prev) =>
@@ -294,10 +348,18 @@ export function DocCreateForm({
         </label>
       </div>
 
-      <Button onClick={submit} disabled={create.isPending}>
-        <FilePlus2 className="mr-1 h-4 w-4" />
-        {create.isPending ? "开单中…" : `开单（${docTypes.length} 张）`}
-      </Button>
+      <div className="flex flex-wrap items-start gap-3">
+        <Button onClick={submit} disabled={create.isPending}>
+          <FilePlus2 className="mr-1 h-4 w-4" />
+          {create.isPending ? "开单中…" : `开单（${docTypes.length} 张）`}
+        </Button>
+        {/* 开单前成品预览：本地渲染、不写库（问题 6） */}
+        <DocCreatePreview
+          preview={preview}
+          docLabel={previewDocLabel}
+          blockers={previewBlockers}
+        />
+      </div>
     </div>
   );
 }

@@ -14,6 +14,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import apiClient from "@/lib/api/client";
+import { nameEnListFromInfo } from "@/lib/products/product-names";
 
 export interface NumericInputItem {
   key: string;
@@ -106,6 +107,10 @@ export interface RegistryProductRow {
   product_key: string;
   name: string;
   name_en?: string;
+  /** 地区别名（主名之外的其它英文名）；后端 `/products` 已按主名算好 */
+  name_en_aliases?: string[];
+  /** 全部英文名（主名在前）—— 详情页编辑框的回填来源 */
+  name_en_list?: string[];
   category_code?: string;
   media_count: number;
   profile: Record<string, unknown>;
@@ -114,7 +119,12 @@ export interface RegistryProductRow {
 export interface WorkProduct {
   key: string;
   name: string;
+  /** 主英文名（报价/单证用它） */
   nameEn: string;
+  /** 全部英文名（主名在前，包含主名）—— 详情页多英文名编辑器用 */
+  nameEnList: string[];
+  /** 地区别名 = nameEnList 去掉主名 */
+  nameEnAliases: string[];
   categoryCode: string;
   tenant: TenantProduct | null;
   isSystem: boolean;
@@ -143,7 +153,9 @@ export function useRegistryProductSpec(productKey: string | null) {
     enabled: Boolean(productKey),
     queryFn: async () => {
       const { data } = await apiClient.get<{ spec: ProductSpec }>(
-        "/export-quote/products/" + encodeURIComponent(productKey ?? "") + "/spec",
+        "/export-quote/products/" +
+          encodeURIComponent(productKey ?? "") +
+          "/spec",
       );
       return data.spec;
     },
@@ -211,14 +223,52 @@ export function useSetProductQuoteEnabled() {
         { params: { workstation: "quote" } },
       );
     },
+    // 2026-10-24：「在报价中显示」开关反馈延迟 ~2s（POST 往返 + 重拉 status + 重拉
+    // export-products 才回显）。这里先乐观写入 status 缓存，失败再回滚——用户点完
+    // checkbox 立刻变，网络失败才回弹并提示。
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: tenantProductKeys.status });
+      const previous = qc.getQueryData<ProductStatusRow[]>(
+        tenantProductKeys.status,
+      );
+      qc.setQueryData<ProductStatusRow[]>(tenantProductKeys.status, (old) => {
+        const rows = Array.isArray(old) ? old : [];
+        const exists = rows.some((r) => r.product_key === input.productKey);
+        return exists
+          ? rows.map((r) =>
+              r.product_key === input.productKey
+                ? { ...r, is_enabled: input.enabled }
+                : r,
+            )
+          : [
+              ...rows,
+              { product_key: input.productKey, is_enabled: input.enabled },
+            ];
+      });
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData(tenantProductKeys.status, context.previous);
+      }
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: tenantProductKeys.status });
       qc.invalidateQueries({ queryKey: ["export-products"] });
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: tenantProductKeys.status });
     },
   });
 }
 
-/** 系统产品 + 租户自定义产品合并成产品卡数据（同 key 时租户行优先）。 */
+/**
+ * 系统产品 + 租户自定义产品合并成产品卡数据（同 key 时租户行优先）。
+ *
+ * 英文名（2026-10-24）三级回落，顺序固定：
+ *   1. `product_profiles.info` 的 name_en_list（团队资料，**系统产品也能改**，主名在前）
+ *   2. `/products` 已经算好的 name_en_list（后端把注册表名一起给了）
+ *   3. 租户行 `product_name_en` → 注册表 `name_en`（旧口径，保持兼容）
+ */
 export function mergeWorkProducts(
   registry: RegistryProductRow[] | undefined,
   tenants: TenantProduct[] | undefined,
@@ -226,12 +276,31 @@ export function mergeWorkProducts(
   const rows: WorkProduct[] = [];
   const seen = new Set<string>();
   const tenantByKey = new Map((tenants ?? []).map((t) => [t.product_key, t]));
+
+  const resolveNames = (
+    profile: Record<string, unknown> | undefined,
+    serverList: string[] | undefined,
+    fallbacks: (string | null | undefined)[],
+  ): string[] => {
+    const fromProfile = nameEnListFromInfo(profile);
+    if (fromProfile.length > 0) return fromProfile;
+    const fromServer = (serverList ?? []).map((s) => s.trim()).filter(Boolean);
+    if (fromServer.length > 0) return fromServer;
+    return fallbacks.map((s) => (s ?? "").trim()).filter(Boolean);
+  };
+
   for (const r of registry ?? []) {
     const t = tenantByKey.get(r.product_key) ?? null;
+    const names = resolveNames(r.profile, r.name_en_list, [
+      t?.product_name_en,
+      r.name_en,
+    ]);
     rows.push({
       key: r.product_key,
       name: t?.product_name || r.name || r.product_key,
-      nameEn: t?.product_name_en || r.name_en || "",
+      nameEn: names[0] ?? "",
+      nameEnList: names,
+      nameEnAliases: names.slice(1),
       categoryCode: t?.category_code || r.category_code || "",
       tenant: t,
       isSystem: !t,
@@ -240,10 +309,13 @@ export function mergeWorkProducts(
   }
   for (const t of tenants ?? []) {
     if (seen.has(t.product_key)) continue;
+    const names = resolveNames(undefined, undefined, [t.product_name_en]);
     rows.push({
       key: t.product_key,
       name: t.product_name || t.product_key,
-      nameEn: t.product_name_en || "",
+      nameEn: names[0] ?? "",
+      nameEnList: names,
+      nameEnAliases: names.slice(1),
       categoryCode: t.category_code || "",
       tenant: t,
       isSystem: false,
@@ -254,7 +326,9 @@ export function mergeWorkProducts(
 }
 
 /** 产品是否已配置计算规则（空白产品会缺 derived）。 */
-export function hasCalculationRules(spec: ProductSpec | undefined | null): boolean {
+export function hasCalculationRules(
+  spec: ProductSpec | undefined | null,
+): boolean {
   if (!spec) return false;
   return Array.isArray(spec.derived) && spec.derived.length > 0;
 }

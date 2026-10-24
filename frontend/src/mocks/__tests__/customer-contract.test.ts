@@ -133,6 +133,27 @@ describe("mock GET /api/v1/customers/:id/records（normalizeCustomerRecords）",
     // 修复前 mock 给的是字符串 "1"，会被判成 null
     expect(Number.isInteger(body.customer.id)).toBe(true);
   });
+
+  it("counts 与树里的订单节点一致（客户详情「询盘/订单」计数读它）", async () => {
+    const body = (await (
+      await fetch(`${BASE}/customers/1/records`)
+    ).json()) as {
+      counts: { quotes: number; orders: number; documents: number };
+      quotes: Array<{ inquiry_id: number | null; orders: unknown[] }>;
+      direct: { orders: unknown[] };
+    };
+    const treeOrders =
+      body.quotes.reduce((n, q) => n + q.orders.length, 0) +
+      body.direct.orders.length;
+    expect(body.counts.orders).toBe(treeOrders);
+    expect(body.counts.quotes).toBe(body.quotes.length);
+    // 未关联询盘的报价下也可能已有订单：这类订单没有询盘卡片可挂，
+    // 必须在「直接下单（正常分类）」区块单独列出（否则计数增加但看不到）。
+    expect(
+      body.quotes.filter((q) => q.inquiry_id == null && q.orders.length > 0)
+        .length,
+    ).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("mock 客户写操作（2026-10-18：新建 / 编辑 / 阶段 / 删除）", () => {

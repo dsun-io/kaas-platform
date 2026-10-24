@@ -468,3 +468,60 @@ def test_import_template_unknown_product_still_404():
             "/api/v1/export-quote/products/nope_not_here/import-template")
     assert resp.status_code == 404
     assert resp.json()["detail"]["error"] == "unknown_product"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 2026-10-24 · 系统产品「在报价中显示」404 修复
+# （生产实测：鹿网/牛栏网开关 POST /tenant-product-status → 404，因为生产
+#  tenant_products 没有 is_system=true 种子行；系统产品真源 = 代码注册表）
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def test_tenant_product_status_system_registry_product_without_db_row():
+    """注册表产品（DB 无行）→ 200 + 写团队启停记录（修复前 404）。"""
+    conn = _FakeConn(fetchrow=[
+        None,  # tenant_products 查不到
+        {"product_key": "field_fence", "is_enabled": False},
+    ])
+    with _patched_products(conn, TEAM1_OWNER):
+        resp = client.post(
+            "/api/v1/tenant-product-status",
+            params={"workstation": "quote"},
+            json={"product_key": "field_fence", "is_enabled": False},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "product_key": "field_fence", "is_system": True, "is_enabled": False,
+    }
+    assert "INSERT INTO tenant_workstation_products" in conn.sql_calls()
+
+
+def test_tenant_product_status_unknown_key_still_404_and_no_write():
+    """真正未知的 key 仍 404，且不写任何启停记录（错误契约不能放宽）。"""
+    conn = _FakeConn(fetchrow=[None])
+    with _patched_products(conn, TEAM1_OWNER):
+        resp = client.post(
+            "/api/v1/tenant-product-status",
+            params={"workstation": "quote"},
+            json={"product_key": "not_a_product", "is_enabled": True},
+        )
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "PRODUCT_NOT_FOUND"
+    assert "INSERT INTO tenant_workstation_products" not in conn.sql_calls()
+
+
+def test_tenant_product_status_tenant_product_unchanged():
+    """租户行命中时口径不变（is_system 取行值）。"""
+    conn = _FakeConn(fetchrow=[
+        {"product_key": "y_posts", "product_name": "Y型立柱", "is_system": False},
+        {"product_key": "y_posts", "is_enabled": True},
+    ])
+    with _patched_products(conn, TEAM1_OWNER):
+        resp = client.post(
+            "/api/v1/tenant-product-status",
+            params={"workstation": "quote"},
+            json={"product_key": "y_posts", "is_enabled": True},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "product_key": "y_posts", "is_system": False, "is_enabled": True,
+    }

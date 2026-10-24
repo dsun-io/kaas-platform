@@ -55,6 +55,13 @@ import main as _main
 # 产品注册表：与 orchestrator 同一份（sync-shared 把 export_quote 整包镜像过来），
 # 所以"有哪些产品"两端天然一致，不会出现"本地有、线上没有"的产品清单。
 from kaas_common.export_quote.products import get as get_product, keys as product_keys
+# 产品英文名（多值 / 主名）的归一化口径：**只在内核实现一处**（前端只搬运用户输入）。
+from kaas_common.export_quote.product_names import (
+    apply_name_en_info,
+    name_en_list_from_info,
+    normalized_info,
+    primary_name_en_from_info,
+)
 
 from kaas_common.workstation.product_scope import REASON_NO_TEAM, product_info_access
 from kaas_common.workstation.scope import is_admin_role
@@ -389,18 +396,34 @@ async def list_products(request: Request, user: dict = Depends(_get_current_user
         DEFAULT_TENANT, *media_extra, table=None)
     media = {r["owner_id"]: int(r["n"]) for r in rows}
     prof_frag, prof_extra = _team_scope_soft(user, 2)
+    # 排序只为**确定性**：管理员视角一行都不过滤，同一 key 可能有多团队各一行，
+    # 统一「最近更新的那次生效」（与 `quote_api._quotable_specs` 同一口径），
+    # 否则产品卡上的英文名会随 PG 返回顺序抖动。
     profs = await db.fetch(
         request, "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
-        + prof_frag,
+        + prof_frag + " ORDER BY updated_at DESC",
         DEFAULT_TENANT, *prof_extra, table="product_profiles")
-    profiles = {r["product_key"]: r["info"] for r in profs}
+    profiles: dict = {}
+    for r in profs:
+        profiles.setdefault(r["product_key"], r["info"])
     items = []
     for key in product_keys():
         spec = get_product(key)
+        info = profiles.get(key) or {}
+        # 英文名（2026-10-24）：团队资料里配的主英文名**优先于**代码注册表 ——
+        # 系统产品（鹿网/牛栏网/勾花网）没有 tenant_products 行，改英文名只能落在
+        # product_profiles.info；这里把读侧统一成一个口径，谁能改、谁生效都看这里。
+        # 注意：没有团队资料时回落注册表 name_en（旧响应逐字不变）。
+        names = name_en_list_from_info(info) or ([spec.name_en] if spec.name_en else [])
+        primary = names[0] if names else ""
         items.append({
             "product_key": key,
             "name": spec.name or key,
-            "name_en": spec.name_en,
+            "name_en": primary or spec.name_en,
+            # 地区别名 = 主名之外的其它英文名（报价/单证只用主名）
+            "name_en_aliases": names[1:],
+            # 全部英文名（主名在前）—— 详情页编辑框用它回填，避免前端自己猜顺序
+            "name_en_list": names,
             "category_code": spec.category_code,
             "media_count": media.get(key, 0),
             "profile": profiles.get(key) or {},
@@ -432,8 +455,11 @@ async def get_profile(product_key: str, request: Request, user: dict = Depends(_
             info = _json.loads(info)
         except (TypeError, ValueError):
             info = {}
+    # 英文名给规范形状（`name_en_list` 主名在前 + `name_en_primary`）；这是**读时投影**，
+    # 不改库里已有数据（历史单值 `name_en` 也在这里被读成一名单）。没配英文名 ⇒ 不加键，
+    # 旧响应逐字不变。
     return {"product_key": product_key,
-            "info": dict(info) if isinstance(info, dict) else {},
+            "info": normalized_info(info),
             "updated_at": row["updated_at"].isoformat() if row and row.get("updated_at") else None}
 
 
@@ -443,6 +469,11 @@ async def put_profile(product_key: str, body: ProfileIn, request: Request,
     # P9：唯一键按团队收敛为 (tenant_id, COALESCE(team_id,0), product_key)
     # ⇒ 写入必须带 team（否则都落进 team_key=0 桶），且 ON CONFLICT 目标要与
     #    索引表达式逐字一致、表达式要加括号（PG16 文法）。
+    #
+    # 英文名（2026-10-24）：写侧**在内核归一化**（前端只把用户输入搬上来）——
+    # 用户可能只发 name_en_list（顺序即主次）或只发 name_en_primary，两种都收；
+    # 历史单值 `name_en` 保持跟随主名。归一化后的完整 info 才是落库值。
+    info = apply_name_en_info(body.info)
     await db.execute(
         request,
         "INSERT INTO product_profiles (tenant_id, team_id, product_key, info, updated_by)"
@@ -451,8 +482,19 @@ async def put_profile(product_key: str, body: ProfileIn, request: Request,
         " SET info=EXCLUDED.info,"
         " updated_by=EXCLUDED.updated_by, updated_at=now()",
         DEFAULT_TENANT, user.get("team_id"), product_key,
-        _json.dumps(body.info, ensure_ascii=False),
+        _json.dumps(info, ensure_ascii=False),
         str(user.get("id") or "") or None)
+    # 租户产品写侧同步主英文名：`tenant_products.product_name_en` 是既有读侧字段
+    # （产品下拉 / 报价行 / 单证快照的兼容路径），不回写会出现「资料里改了、旧读侧还是旧名」。
+    # 系统产品没有这一行 ⇒ UPDATE 0 行，天然无副作用；产品名称（中文）不在这里动。
+    primary = primary_name_en_from_info(info)
+    if primary:
+        await db.execute(
+            request,
+            "UPDATE tenant_products SET product_name_en=$1, updated_at=now()"
+            " WHERE tenant_id=$2 AND product_key=$3"
+            " AND team_id IS NOT DISTINCT FROM $4",
+            primary, DEFAULT_TENANT, product_key, user.get("team_id"))
     return await get_profile(product_key, request, user)
 
 

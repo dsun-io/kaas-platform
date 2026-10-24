@@ -392,6 +392,48 @@ async def _quotable_specs(request: Request, user: dict) -> dict:
         table="tenant_workstation_products",
     )
     disabled = {r["product_key"] for r in disabled_rows}
+
+    # ── 英文名（2026-10-24）：主英文名覆盖 spec.name_en ──────────────────────
+    # 为什么在这里：报价行 `product_name = name_en || name`
+    # （frontend/src/app/(app)/quotes/lib/line-to-item.ts），并随报价落到订单/单证快照。
+    # 团队资料（`product_profiles.info` 的 name_en_list / name_en_primary）是用户唯一能改
+    # 英文名的入口（系统产品没有 tenant_products 行）；此处不覆盖，改完的英文名就到不了
+    # 对外单据。只改**展示名**，算价字段一律不动；没配英文名的产品原样返回（旧口径不变）。
+    # 归一化口径在共享内核 `kaas_common.export_quote.product_names`（与 ws_files 同一份）。
+    from dataclasses import replace as _replace  # noqa: PLC0415
+    from kaas_common.export_quote.product_names import (  # noqa: PLC0415
+        primary_name_en_from_info,
+    )
+
+    prof_sql = "SELECT product_key, info FROM product_profiles WHERE tenant_id=$1"
+    prof_args: list = [tenant]
+    if not is_admin_role(user.get("role")):
+        # 与 `ws_files._team_scope_soft` 同口径：非管理员只看得到本团队的资料行
+        # （无团队 ⇒ 谓词 = NULL ⇒ 没命中，回落注册表名，不泄露别家英文名）。
+        prof_sql += " AND team_id=$2"
+        prof_args.append(user.get("team_id"))
+    prof_sql += " ORDER BY updated_at DESC"
+    prof_rows = await _db.fetch(  # noqa: SLF001 - 同模块既有用法
+        request, prof_sql, *prof_args, table="product_profiles")
+    profiles: dict = {}
+    for r in prof_rows:
+        if not isinstance(r, dict):
+            continue
+        pkey = r.get("product_key")
+        if not isinstance(pkey, str) or pkey in profiles:
+            continue  # 同一 key 多行（管理员视角）⇒ 最近更新的生效
+        info = r.get("info")
+        if isinstance(info, str):
+            try:
+                info = json.loads(info)
+            except (TypeError, ValueError):
+                info = {}
+        profiles[pkey] = info if isinstance(info, dict) else {}
+    for pkey, spec in list(specs.items()):
+        primary = primary_name_en_from_info(profiles.get(pkey))
+        if primary and primary != spec.name_en:
+            specs[pkey] = _replace(spec, name_en=primary)
+
     return {key: spec for key, spec in specs.items() if spec.key not in disabled}
 
 

@@ -66,7 +66,7 @@ import { DocRenderCheckBadge } from "./components/doc-render-check-badge";
 import { DocStampReturn } from "./components/doc-stamp-return";
 import { DocVoidButton } from "./components/doc-void-button";
 import { DocPreview, renderMetaOf } from "./components/doc-preview";
-import { SamplePreview } from "./components/sample-preview";
+import { SamplePreviewEntry } from "./components/sample-preview-entry";
 import { DOC_TYPE_GROUPS } from "./lib/doc-type-groups";
 import {
   TRADE_DOCS_PAGE_SIZE,
@@ -326,19 +326,20 @@ export default function TradeDocsPage() {
         description="外贸出口全套单据：开单 → 校对 → 签发 → 打印/导出。单据自动继承上游订单的货物与贸易条款。"
       />
 
+      {/*
+        页面层级（2026-10-24，问题 6）：开单是**一等公民** —— 紧跟页头、第一屏可见；
+        样板预览不常用，收成一行入口（默认收起，点开才是对话框），不再占顶部大块空间。
+      */}
       <SectionCard
-        title="样板预览（不需要真实单据）"
-        description="用固定样例数据渲染 18 类单据，用于校对版式、金额大写与日期写法。不写数据库、不产生业务记录。"
-      >
-        <SamplePreview />
-      </SectionCard>
-
-      <SectionCard
-        title="开单"
-        description="单证必须挂靠上游（订单/报价单），这样货物、金额与贸易条款才能自动带入，避免手工重填出错。"
+        title="开单（第一步）"
+        description="先开单：选单证类型 + 上游，货物、金额与贸易条款会自动带入；开单前可用「成品预览」检查版式。"
+        className="border-primary/40"
       >
         <DocCreateForm onCreated={(id) => setSelectedId(id)} />
       </SectionCard>
+
+      <SamplePreviewEntry />
+
       <SectionCard
         title="单证台账"
         action={
@@ -480,7 +481,7 @@ export default function TradeDocsPage() {
             </div>
             <p className="text-muted-foreground">
               台账数据需要连上服务后才能显示。想先看单据长什么样、校对版式，
-              请用下面的「样板预览」—— 它不需要真实单据。
+              请用上方的「样板预览」—— 它不需要真实单据。
             </p>
           </div>
         ) : rows.length === 0 ? (

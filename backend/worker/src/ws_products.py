@@ -493,6 +493,20 @@ async def set_workstation_product(
     }
 
 
+def _registered_product_or_none(product_key: str):
+    """代码注册表里的产品（系统产品真源）；引擎未打包时返回 None（降级同 _validate_spec）。"""
+    try:
+        from kaas_common.export_quote.products import (  # noqa: PLC0415
+            get as _get_registered,
+            has as _has_registered,
+        )
+    except ImportError:
+        return None
+    if not _has_registered(product_key):
+        return None
+    return _get_registered(product_key)
+
+
 # ── 系统级产品的租户停用（需求 16，与 orchestrator `/tenant-product-status` 同路径）──
 class _TenantProductStatusIn(BaseModel):
     product_key: str
@@ -538,9 +552,18 @@ async def set_tenant_product_status(
             body.product_key, tid,
         )
         if product is None:
-            raise HTTPException(status_code=404, detail={
-                "error": "not_found", "code": "PRODUCT_NOT_FOUND",
-            })
+            # 2026-10-24 修复（生产实测：鹿网/牛栏网「在报价中显示」恒 404）：
+            # 系统产品的真源是**代码注册表**（`kaas_common.export_quote.products`），
+            # 生产 `tenant_products` 里没有 `is_system=true` 的种子行 —— 原实现把
+            # 「DB 查不到」误判成「产品不存在」，注册表产品的启停因此永远 404。
+            # 口径：注册表里有该 key ⇒ 视作系统产品，允许写团队启停记录；
+            # 真正未知的 key 仍 404（保留既有错误契约）。
+            registered = _registered_product_or_none(body.product_key)
+            if registered is None:
+                raise HTTPException(status_code=404, detail={
+                    "error": "not_found", "code": "PRODUCT_NOT_FOUND",
+                })
+            product = {"product_name": registered.name, "is_system": True}
         r = await conn.fetchrow(
             "INSERT INTO tenant_workstation_products"
             " (tenant_id, team_id, workstation, product_key, is_enabled)"

@@ -14,6 +14,25 @@
 
 ## 交接摘要（滚动更新 · HEAD 以 `git log` 为准 · 文件域/产品媒体特性 2026-10-12 收口）
 
+> **（2026-10-24 · 线上反馈六项 ✅：产品英文名 / 在报价中显示 404 / 客户询盘·订单 / 单证页）**
+> 明细见 [`HANDOVER_2026-10-24_LIVE_FEEDBACK.md`](./HANDOVER_2026-10-24_LIVE_FEEDBACK.md)，待办挂 `TODO.md` §S。
+> - **英文名不能保存（#1/#3/#4）**：产品基本信息「保存」只 PUT `/products/{key}/profile` 的 usage/origin/material_options，
+>   **英文名没进请求体**；系统产品（鹿网/牛栏网）无 `tenant_products` 行 ⇒ 输入框 disabled 且无保存入口。
+>   修复：英文名改存**团队级** `product_profiles.info`（`name_en_list` 主名在前 + `name_en_primary`，零迁移；
+>   归一化只在 `kaas_common/export_quote/product_names.py`），产品详情三个保存口统一为 saveAll（profile + 有租户行时 tenant 行）；
+>   `/products` 回主名+地区别名，`/export-quote/products` 用主名覆盖 `spec.name_en` ⇒ 新报价/订单/单证用主名（历史快照不回改）。
+> - **「在报价中显示」对鹿网/牛栏网 404（#2）**：生产 `tenant_products` 只有 2 行租户产品；系统产品真源是代码注册表、DB 无 `is_system` 行。
+>   门面 `POST /tenant-product-status` 原直连 SQL 查不到就 404 ⇒ 改为**内核透传**；内核查不到时回落注册表（未知 key 仍 404）。
+>   前端加乐观更新，消除 ~2s 回显延迟（失败回滚）。
+> - **客户「询盘」tab（#5）**：改名「询盘/订单 (N)」，N = 询盘数 + records 树订单数（按 order.id 去重）；无询盘来源订单单独列出；
+>   订单数未知时显示 `N+` 不冒充 0。
+> - **单证页（#6）**：开单升为页头后第一区块；样板预览收成默认收起的一行入口（Dialog，18 类能力不变）；
+>   新增**开单前成品预览**（本地 sample-data 底稿 + 当前表单已填值，`renderTradeDoc` iframe 只读，零后端/零写库）。
+> - **门禁（2026-10-24 实测）**：worker **1804 passed + 12 skipped** / orchestrator **273** / ts-worker **307（26 文件）** /
+>   前端 **226 files·1641 passed**（typecheck 0 / lint 0 error·75 存量 warning）/ e2e **28 passed** /
+>   contracts R0–R6、mocks、ui 双门禁、trade-doc:check、6 项静态断言全 PASS；`NEXT_EXPORT=1 pnpm build` exit 0
+>   （Windows 本机 `assets:check` 的 `nextDirs=39` 属已知平台产物缺陷，以 CI ubuntu gate 为准）。
+
 > **（2026-10-24 · 线上修复：产品图上传 400「Missing boundary in multipart.」✅）**
 > - **根因**：`frontend/src/lib/api/xhr-upload.ts` 的 `xhrPostForm` 给 `FormData` 手写
 >   `Content-Type: multipart/form-data` —— 浏览器**只在作者没设该头时**才补 `; boundary=…`，
