@@ -90,7 +90,16 @@
 > - 首个切片 `POST /api/v1/export-quote/calculate`：门面 `src/routes/engine.ts` 供数 → 内核 `src/engine_api.py` 纯算（同 pydantic 模型、同算子、**零 DB 调用**）→ 门面原样回放；
 >   `kaas_common/export_quote/**`、`trade_doc/**` **零 diff**；金标 fixture（旧路径真实生成，生成器幂等）：**旧 == 新 == fixture，0 diff**（Python 13 测 + TS 12 测）。
 > - 灰度：`AUTH_DB_SPLIT_ROUTES` 未含 `export-quote.calculate` ⇒ **本次部署行为与今天逐字一致**（切片默认 off，待线上验证后再放量）。
-> - **线上灰度实测（17:30–18:05）：切片已回退，未放量**，抓到 3 个问题（详见 P2 文档 §8.5）：
+> - **线上灰度实测（17:30–18:20）：切片已放量完成**（三轮修复与验证，详见 P2 文档 §8.5）：
+>   ① RPC 走 `/internal/*` 被**内核自己的入口分发**（`Default.fetch` 里非 /api 一律 `env.ASSETS.fetch`）拦截
+>      （GET→SPA index.html、POST→405 空体；改 `assets.run_worker_first` 无效）⇒ 已改 `/api/v1/internal/engine/quote/calculate`；
+>   ② **商业闸门**：把内部 RPC 前缀登记进 `kaas_common/workstation/subscriptions.py` 的 `WORKSTATION_PATHS["quotes"]`
+>      ⇒ 既有全局中间件自动覆盖（**单一真源，无第二份判定**）；门面补 4xx 原样回放；
+>      线上验证：未开通账号 404 响应 **sha256 与旧路径基线逐字节一致**；
+>   ③ 诊断增强：门面 502 带 `status` + 响应体头部；
+>   ④ **P3 增量**：内核 `Default.fetch` 去掉资产分流 + `wrangler.jsonc` 移除 `assets` 整块（前端由门面伺服），
+>      彻底消除该类坑；门禁：worker 1855+12skip / ts-worker 437 / orchestrator 273 / 静态断言全 PASS。
+> - （历史记录）**17:30–18:05 曾回退**，抓到 3 个问题（详见 P2 文档 §8.5）：
 >   ① RPC 走 `/internal/*` 被内核**静态资产层**拦截（405 空体 / GET 回退 index.html；`run_worker_first` 两种改法实测均无效）
 >      ⇒ 已改为 **`POST /api/v1/internal/engine/quote/calculate`**（/api 前缀已验证可达），RPC 返回 200 真实算价；
 >   ② **商业闸门缺失（阻塞项）**：旧路径对未开通 quotes 工位的账号返回 `404 WORKSTATION_NOT_SUBSCRIBED`，新路径直接算出报价

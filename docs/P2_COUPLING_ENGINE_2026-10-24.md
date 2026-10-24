@@ -417,7 +417,31 @@ GET /trade-docs/{id}/render-data 与 POST /trade-docs/preview-render-data 是「
   `POST /api/v1/internal/engine/quote/calculate`（内核仍无公网域名、只经 Service Binding 可达，安全性不变）。改动后 RPC 返回 200 与真实算价结果。
 - 经验：**内核新增任何"非 /api 前缀"的入口，都必须先验证资产层是否放行**（本项目同类坑已第二次：第一次是 /health 被 SPA 回退）。
 
-### 8.5.2 商业闸门缺失（**阻塞放量**，必须先修）
+
+#### 8.5.1 更正（2026-10-24 18:20，推翻先前「资产层路由」推断）
+
+真正根因在**我们自己的入口分发代码**，不在 Cloudflare 资产路由：
+
+```python
+# backend/worker/src/main.py（修改前）
+class Default(WorkerEntrypoint):
+    async def fetch(self, request):
+        path = urlparse(request.url).path
+        if path.startswith("/api/") or path == "/health":
+            return await asgi.fetch(app, request, self.env)
+        return await self.env.ASSETS.fetch(request)   # ← 非 /api 一律进资产层
+```
+
+所以 `/internal/engine/*` 无论怎么改 `assets.run_worker_first`（数组或 `true`）都无效 ——
+分流发生在 **Python 入口**，资产路由策略根本不参与。表现即：GET 被 SPA 回退成 `index.html`、POST 返回 405 空体。
+
+**P3 已彻底修掉这一类坑**（2026-10-24）：
+1. `main.py` 的 `Default.fetch` 改为**一律 `asgi.fetch(app, ...)`**（不再做 /api 与资产分流）；
+2. 内核 `wrangler.jsonc` **移除 `assets` 整块** —— 前端由 kaas-edge 伺服，内核无公网域名、只经 Service Binding + cron 被调用，
+   资产是纯冗余且是事故源；顺带把内核部署体积从含资产的 ~12.2MB 降下来。
+3. 结论：以后内核新增任何内部前缀（`/internal/*`、`/mcp`、未来 RPC 域）都不必再动资产配置；
+   但仍建议内部 RPC 放在 `/api/` 下（与现有可观测/冒烟口径一致，本切片已改）。
+### 8.5.2 商业闸门缺失（**已修**）
 
 - 对比结果：同一请求、qa_user（未开通 quotes 工位）
   · 旧路径：`404 {"error":"not_found","code":"WORKSTATION_NOT_SUBSCRIBED",...}`

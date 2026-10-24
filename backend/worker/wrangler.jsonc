@@ -66,21 +66,15 @@
   },
   // 内核不暴露公网域名：必须保持为空。wrangler 只对 custom_domain 路由调 publishCustomDomains，
   // 空数组 = 部署不会触碰任何域名；删掉注释/回填域名会被 scripts/check-deploy-domains.py 拦下。
-  "routes": [],
-  "assets": {
-    "directory": "../../frontend/out",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    // /api/*、/health 与 **/internal/*** 显式交给 Worker，不再依赖「资产未命中才落到 Worker」的隐式行为。
-    // 历史上正是那条隐式路径让 /health 被 SPA 回退返回 index.html（状态码 200 但内容不是
-    // 健康检查结果），使 CI 冒烟测试形同虚设、Worker 已挂仍“通过”。
-    // 2026-10-24 同类坑第二次踩到：P2 的 /internal/engine/* RPC 没登记在这里 ⇒ 请求被资产层
-    // SPA 回退成 index.html（HTML）/ 非 GET 返回 405 空体 ⇒ 门面 upstream.json() 解析失败，报
-    // 「engine rpc returned non-JSON body」502（内核 outcome 却是 success，极易误判为代码 bug）。
-    //
-    // 修法取**最彻底的一种**：内核没有公网域名（只经 Service Binding + cron 被调用），
-    // 静态资产对它本来就多余（前端由 kaas-edge 伺服）⇒ 直接 true，所有请求进 FastAPI。
-    // 这样以后新增任何内部前缀（/internal/*、/mcp、将来的 RPC 域）都不必再改这一行。
-    "run_worker_first": true
-  }
+  "routes": []
+  // ── 2026-10-24（P3）：**内核不再挂静态资产** ──────────────────────────────
+  // 前端由 kaas-edge 伺服（ADR-008 两层架构，浏览器只访问门面域名），内核没有公网域名、
+  // 只经 Service Binding + cron 被调用 —— 内核上的 assets 是纯冗余，且是**事故源**：
+  //   · main.py 的 Default.fetch 曾把"非 /api && 非 /health"的请求交给 env.ASSETS.fetch，
+  //     于是 P2 的 /internal/engine/* RPC 被 SPA 回退成 index.html（GET）/
+  //     405 空体（POST）⇒ 门面报 "engine rpc returned non-JSON body" 502；
+  //   · 更坑的是：改 wrangler 的 assets.run_worker_first（数组或 true）**完全无效**，
+  //     因为分流发生在 Python 入口代码里，不在资产路由层（本项目同类坑第二次）。
+  // 摘掉 assets 后：内核入口一律 asgi.fetch(app)，部署体积也从 ~12.2MB 降下来，
+  // 且以后新增任何内部前缀都不必再动资产配置。
 }

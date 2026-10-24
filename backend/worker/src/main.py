@@ -3725,11 +3725,14 @@ async def patch_customer_capability(
 # CI 冒烟测试形同虚设，Worker 实际已挂却仍然"通过"。
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        from urllib.parse import urlparse  # 惰性导入：仅入口分发使用
-        path = urlparse(request.url).path
-        if path.startswith("/api/") or path == "/health":
-            return await asgi.fetch(app, request, self.env)
-        return await self.env.ASSETS.fetch(request)
+        # 2026-10-24（P3）：**不再做 /api 与资产的分流** —— 内核已无静态资产、也无公网域名
+        # （前端由 kaas-edge 伺服；内核只经 Service Binding + cron 被调用）。
+        # 历史坑：这里曾把"非 /api && 非 /health"的请求交给 env.ASSETS.fetch，
+        # 导致 P2 的 /internal/engine/* RPC 被 SPA 回退成 index.html / 非 GET 返回 405 空体，
+        # 门面解析成 "engine rpc returned non-JSON body" 502，且 **改 wrangler 的
+        # run_worker_first 完全无效**（拦截发生在 Python 代码里，不是资产路由）。
+        # 现在一律进 FastAPI：新增任何内部前缀都不必再改这里。
+        return await asgi.fetch(app, request, self.env)
 
     async def scheduled(self, controller, env, ctx):
         """Cron Triggers 入口（orchestrator APScheduler 迁移，逻辑全在 ws_cron.py）。
