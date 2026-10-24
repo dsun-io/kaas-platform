@@ -59,6 +59,27 @@
 > - 修平 2 处 parity：`PATCH /auth/me` 缺 `team_name`、`plan` 回落用 `??` 而非 Python 的 `or`；
 > - 核实并登记：JWT 只有 `sub/iat/exp`（tenant/team/scope 属内部 JWT）、auth 域 Python 侧无审计写入、客户编码为死代码；
 > - 新增 `tests/auth-p1-direct.test.ts` 36 测（含 9 条路由 **KERNEL.fetch 0 次**、on/off 两态）；门禁 ts-worker **32 文件 / 423 测**、前端 auth 12 测、contracts:check PASS。
+> - **已部署**（commit `2aaa5a7`，deploy run `40079138252` 全绿）。部署前 secret-scan 拦下测试里的高熵假 token（`generic-secret`），
+>   已按「降低熵」正解修复（`fixture-token-low-entropy`，未走 allowlist 豁免），`node scripts/check-secrets.mjs` PASS。
+>
+> **P0+P1 合并线上验证（2026-10-24 16:50，带真实 JWT）**
+> | 项 | 结果 |
+> |---|---|
+> | `POST /auth/login` | 200 |
+> | `GET /auth/me` | 200 |
+> | 错密码 | 401 `{"detail":"Invalid credentials"}` |
+> | forgot-password 非法邮箱（安全负例，不发信） | 422 `{"detail":"validation_error: email is required"}` |
+> | `GET /products` | 200（3 产品） |
+> | `GET /products/v_posts/profile` | 200 `{"product_key":"v_posts","info":{},"updated_at":null}`（无行口径） |
+> | `GET /products/v_posts/media` | 403 `NO_TEAM`（既定团队口径） |
+> | `GET /notifications/unread-count` | 200 `{"unread":0}` |
+> | `GET /approvals?view=pending` | 200 `{"items":[],"total":0,...}` |
+> | 匿名 `GET /products` | 401（鉴权口径未变） |
+> | **5xx 数量** | **0** |
+> | **同期内核 tail 收到请求数** | **0**（认证 + 5 条热读全部未触达 Python 内核） |
+>
+> 结论：**用户端「上传成功不显示 / 刷新后产品加载失败」的直接病根（页面热读依赖 Pyodide 冷启动）已消除**；
+> 引擎端点（quotes/trade-docs）仍走内核，属 P2 范围。
 > - **Cloudflare 工单证据包**：见 [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md)（可直接提交）。
 
 > **（2026-10-24 下午 · 第三轮 A/B/C/D ✅：按客户选英文名 / token 只读预览 / 路由计数 / workstation-products）**
