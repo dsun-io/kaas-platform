@@ -75,7 +75,12 @@
     // 2026-10-24 18:10 复核放量：闸门已按**单一真源**修复 —— 把内部 RPC 前缀登记进
     // kaas_common/workstation/subscriptions.py 的 WORKSTATION_PATHS["quotes"]，
     // 既有全局中间件因此自动覆盖新路径（没有第二份判定）；门面新增 4xx 原样回放。
-    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate"
+    // 2026-10-24 19:05 第四批放量：门面**工位闸门**已实现（src/workstation-gate.ts，映射与
+    // kaas_common 真源同源 + 漂移机检）⇒ 可以安全放行收费工位上的直连路由：
+    //   · 引擎同族 4 切片：export-quote.{verify,formulas,spec,explain}
+    //   · 批次 A 六条读：inquiries.{list,detail,stage-log} / quotations.list / tax-archives.list / product-tax-rates.list
+    // 回退：删条目或 AUTH_DB_SPLIT=off（行为立即回到全透传）。
+    "AUTH_DB_SPLIT_ROUTES": "notifications.unread-count,approvals.list,products.profile,products.media,products.list,export-quote.calculate,export-quote.verify,export-quote.formulas,export-quote.spec,export-quote.explain,inquiries.list,inquiries.detail,inquiries.stage-log,quotations.list,tax-archives.list,product-tax-rates.list"
   }
   // 无 triggers（门面不跑 cron）
 }

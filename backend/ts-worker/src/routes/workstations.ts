@@ -41,7 +41,7 @@ type Row = Record<string, unknown>;
 type AppEnv = { Bindings: Env };
 
 /** 有效订阅 SQL 片段（ws_workstations.py:47 / ws_products.py:56 同一条）。 */
-const LIVE_SUB = "active = true AND (expires_at IS NULL OR expires_at > now())";
+export const LIVE_SUB = "active = true AND (expires_at IS NULL OR expires_at > now())";
 
 // ── 行投影 ──────────────────────────────────────────────────────────────────
 /** 本域有的 jsonb 文本列（spec / info / overrides）：字符串形态才解析。 */
@@ -139,7 +139,7 @@ app.get("/api/v1/enums", (c) => respond(c, async () => c.json(ENUMS)));
 // ══════════════════════════════════════════════════════════════════════════════
 
 /** subscriptions.py:93-102 normalize_codes（逐字直译：去空白、小写、丢空值）。 */
-function normalizeCodes(codes: Iterable<string>): Set<string> {
+export function normalizeCodes(codes: Iterable<string>): Set<string> {
   const out = new Set<string>();
   for (const code of codes) {
     const text = String(code).trim().toLowerCase();
@@ -149,7 +149,7 @@ function normalizeCodes(codes: Iterable<string>): Set<string> {
 }
 
 /** subscriptions.py:105-113 has_workstation（full_chain 命中即视为开通一切）。 */
-function hasWorkstation(codes: Set<string>, workstation: string): boolean {
+export function hasWorkstation(codes: Set<string>, workstation: string): boolean {
   return codes.has(FULL_CHAIN) || codes.has(workstation.trim().toLowerCase());
 }
 
@@ -184,17 +184,27 @@ function parseExpires(value: string | null | undefined): Date | null {
 }
 
 /** ws_workstations.py:_codes_for_user（生效编码 = 团队 ∪ 个人；平台管理员 = 全工位）。 */
-async function codesForUser(sql: Db, user: CurrentUser): Promise<Set<string>> {
+export async function codesForUser(
+  sql: Db,
+  user: CurrentUser,
+  /**
+   * SQL 标记（仅出现在注释里，不影响语义）：
+   * 工位闸门传 "gate"，测试桩据此只拦截**闸门**的订阅查询，
+   * 不劫持 /me/workstations 等本来就要读订阅的合法查询。
+   */
+  marker?: string,
+): Promise<Set<string>> {
   if (isAdminRole(user.role)) return new Set([FULL_CHAIN]);
+  const tag = marker ? " /*" + marker + "*/" : "";
   const codes = new Set<string>();
   if (user.team_id !== null) {
     const teamRows = await sql.unsafe(
-      "SELECT code FROM team_subscriptions WHERE team_id=$1 AND " + LIVE_SUB,
+      "SELECT code FROM team_subscriptions" + tag + " WHERE team_id=$1 AND " + LIVE_SUB,
       [user.team_id]);
     for (const row of teamRows as Row[]) codes.add(String(row.code));
   }
   const userRows = await sql.unsafe(
-    "SELECT code FROM user_subscriptions WHERE user_id=$1 AND " + LIVE_SUB, [user.id]);
+    "SELECT code FROM user_subscriptions" + tag + " WHERE user_id=$1 AND " + LIVE_SUB, [user.id]);
   for (const row of userRows as Row[]) codes.add(String(row.code));
   return normalizeCodes(codes);
 }

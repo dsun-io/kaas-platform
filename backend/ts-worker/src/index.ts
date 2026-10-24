@@ -30,6 +30,7 @@ import engineRoutes from "./routes/engine";
 import { buildOpenApiDocument } from "./openapi";
 import { createProxyApp } from "./proxy";
 import { callKernel } from "./kernel";
+import { workstationGate } from "./workstation-gate";
 
 const app = new Hono<AppEnv>();
 
@@ -86,6 +87,17 @@ function corsHeaders(allowed: string): Record<string, string> {
 // 必须在业务路由之前注册：通过后把 actor 写入 c.set("apiTokenActor")，代理/路由复用同一身份。
 // 用全局 * 注册（中间件内部只处理 /api/*）：若注册成 /api/*，OpenAPI 生成器会把它当成透传 mount。
 app.use("*", apiTokenScopeMiddleware);
+
+// ── 工位订阅闸门（2026-10-24，P3 放量前置）────────────────────────────────
+// 与内核 ws_workstations.py 的全局中间件**同语义**：按路径映射判「该账号/团队开通了哪些工位」，
+// 未开通返回 404 WORKSTATION_NOT_SUBSCRIBED（不暴露工位存在性）。
+// 为什么门面必须有：门面直连（AUTH_DB_SPLIT=on）的端点不进内核 ⇒ 内核闸门覆盖不到，
+// 放量即绕过商业限制（2026-10-24 灰度实测踩到，见 docs/P2_COUPLING_ENGINE_2026-10-24.md §8.5.2/§8.7）。
+// 路径映射与放行白名单与 kaas_common/workstation/subscriptions.py 逐条一致，
+// 由 scripts/check-workstation-map.py 比对防漂移。必须注册在业务路由之前。
+// 用全局 "*" 注册（中间件内部只处理 /api/*），与上面的 apiTokenScopeMiddleware 同款：
+// 注册成 /api/* 会被 route-surface 机检当成「多余路由」、也会让 openapi 前缀组计数 +1。
+app.use("*", workstationGate());
 
 // ── 业务域挂载（Phase 2；语义真源 = backend/worker/src/main.py + ws_*.py）──
 // auth 的 9 条路由用域内相对路径（/login、/me…），挂到 /api/v1/auth；
