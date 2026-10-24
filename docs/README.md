@@ -41,6 +41,7 @@
 | 3d | [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT.md) | **可直接提交的 Cloudflare 工单（v2，中文母版）**：异常栈 / 三窗口量化 / 对照实验 E1–E5（含两个阴性结果）/ 8 条主动披露 / A1–A9 附件 |
 | 3e | [CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT_EN.md](./CLOUDFLARE_TICKET_2026-10-24_PYODIDE_INIT_EN.md) | 工单**英文提交正文**（与 3d 同源，可直接粘贴） |
 | 3f | [ticket-2026-10-24/README.md](./ticket-2026-10-24/README.md) | 工单**附件工件索引**：A2 小时序列 / A5 依赖包体 / A7 门面对照 / A8 分位 / A9 时间线 / A1 摘录（附限制说明） |
+| 3f-1 | [CLOUDFLARE_TICKET_SUBMIT_PACKAGE.md](./CLOUDFLARE_TICKET_SUBMIT_PACKAGE.md) | **工单提交包（照做即可）**：提交步骤 / 优先级 / 附件打包清单 / 24h 追问脚本 / 回填区 |
 | 3g | [P3_PASSTHROUGH_DISPOSITION_2026-10-24.md](./P3_PASSTHROUGH_DISPOSITION_2026-10-24.md) | **87 条 passthrough 逐条处置表** + P3 收尾四步 + 25 个可删内核 handler 清单（含「删后 off 回退失效」取舍） |
 | 3h | [P3_CLOSEOUT_INVENTORY_2026-10-24.md](./P3_CLOSEOUT_INVENTORY_2026-10-24.md) | 内核 DB/鉴权依赖全量盘点（318 路由 / 389 DB 调用 / 269 auth）+ P3 目标修订 |
 | 3i | [P3_COVERAGE_AND_BENEFIT_2026-10-24.md](./P3_COVERAGE_AND_BENEFIT_2026-10-24.md) | **机检覆盖率与收益**：87 条全部归类（32 已覆盖 / 14 留内核 / 41 例外 / 未归类 0）+ init 暴露面 **-62%** |
